@@ -1,0 +1,882 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DevFlow AI Guide</title>
+<meta name="description" content="Interactive end-to-end guide to DevFlow AI: architecture, agents, the LangGraph workflow, security, API and setup.">
+<style>
+:root {
+  --bg: #f6f7fb; --surface: #ffffff; --surface-2: #f0f2f8; --text: #161a2b; --muted: #5b6275;
+  --border: #e1e4ee; --primary: #4f46e5; --primary-soft: #eceafe; --accent: #0ea5e9;
+  --ok: #15803d; --ok-soft: #e7f6ec; --warn: #b45309; --warn-soft: #fff4e2; --err: #b91c1c; --err-soft: #fdecec;
+  --human: #c2410c; --code-bg: #0f1424; --code-text: #e3e7f5; --shadow: 0 1px 2px rgba(16,24,40,.06), 0 4px 16px rgba(16,24,40,.05);
+  --radius: 12px; --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0b0f1c; --surface: #131a2c; --surface-2: #1a2238; --text: #e8ebf5; --muted: #9aa3b8; --border: #263049;
+    --primary: #8b85ff; --primary-soft: #23214a; --accent: #38bdf8; --ok: #4ade80; --ok-soft: #12301f;
+    --warn: #fbbf24; --warn-soft: #3a2a0b; --err: #f87171; --err-soft: #3b1414; --human: #fb923c; --code-bg: #0a0e1a; --shadow: none;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0b0f1c; --surface: #131a2c; --surface-2: #1a2238; --text: #e8ebf5; --muted: #9aa3b8; --border: #263049;
+  --primary: #8b85ff; --primary-soft: #23214a; --accent: #38bdf8; --ok: #4ade80; --ok-soft: #12301f;
+  --warn: #fbbf24; --warn-soft: #3a2a0b; --err: #f87171; --err-soft: #3b1414; --human: #fb923c; --code-bg: #0a0e1a; --shadow: none;
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+a { color: var(--primary); }
+code, pre, kbd { font-family: var(--mono); font-size: .88em; }
+code { background: var(--surface-2); padding: .1em .35em; border-radius: 5px; }
+pre { background: var(--code-bg); color: var(--code-text); padding: 14px 16px; border-radius: 10px; overflow-x: auto; margin: 0; }
+pre code { background: none; padding: 0; color: inherit; }
+h1, h2, h3 { line-height: 1.25; }
+h2 { font-size: 1.55rem; margin: 0 0 .4rem; }
+h3 { font-size: 1.1rem; margin: 1.2rem 0 .4rem; }
+.layout { display: grid; grid-template-columns: 250px minmax(0, 1fr); min-height: 100vh; }
+nav.side { position: sticky; top: 0; height: 100vh; overflow-y: auto; border-right: 1px solid var(--border); background: var(--surface); padding: 18px 12px; }
+.brand { display: flex; gap: 10px; align-items: center; font-weight: 800; font-size: 1.1rem; padding: 0 8px 14px; }
+.logo { width: 30px; height: 30px; border-radius: 8px; background: var(--primary); color: #fff; display: grid; place-items: center; font-size: .85rem; }
+nav.side a { display: block; padding: 7px 10px; border-radius: 8px; color: var(--muted); text-decoration: none; font-weight: 500; }
+nav.side a:hover { background: var(--surface-2); color: var(--text); }
+nav.side a.active { background: var(--primary-soft); color: var(--primary); }
+.theme-btn { margin: 14px 8px 0; width: calc(100% - 16px); }
+main { padding: 32px clamp(16px, 4vw, 48px) 80px; max-width: 1180px; min-width: 0; }
+section { padding: 26px 0 30px; border-bottom: 1px solid var(--border); scroll-margin-top: 10px; }
+.lead { color: var(--muted); font-size: 1.05rem; margin: 0 0 1rem; max-width: 820px; }
+.hero h1 { font-size: clamp(1.8rem, 4vw, 2.6rem); margin: 0 0 .4rem; }
+.pill { display: inline-block; font-size: .75rem; font-weight: 600; padding: 2px 9px; border-radius: 999px; background: var(--primary-soft); color: var(--primary); }
+.grid { display: grid; gap: 14px; }
+.g2 { grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr)); }
+.g3 { grid-template-columns: repeat(auto-fit, minmax(min(230px, 100%), 1fr)); }
+.g4 { grid-template-columns: repeat(auto-fit, minmax(min(150px, 100%), 1fr)); }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; box-shadow: var(--shadow); }
+.card h4 { margin: 0 0 4px; font-size: 1rem; }
+.muted { color: var(--muted); }
+.small { font-size: .86rem; }
+.stat { font-size: 1.8rem; font-weight: 800; }
+button, .btn { font: inherit; font-weight: 600; border: 1px solid var(--border); background: var(--surface); color: var(--text); padding: 7px 14px; border-radius: 9px; cursor: pointer; }
+button:hover { border-color: var(--primary); }
+button.primary { background: var(--primary); color: #fff; border-color: var(--primary); }
+button:disabled { opacity: .45; cursor: default; }
+button:focus-visible, a:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+select, input[type=text], input[type=number], input[type=search] { font: inherit; padding: 7px 10px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface); color: var(--text); min-width: 0; }
+table { width: 100%; border-collapse: collapse; font-size: .92rem; }
+th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+th { color: var(--muted); font-weight: 600; font-size: .82rem; text-transform: uppercase; letter-spacing: .03em; }
+.table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); }
+.tag { display: inline-block; font-size: .72rem; font-weight: 700; padding: 1px 7px; border-radius: 6px; font-family: var(--mono); }
+.GET { background: var(--ok-soft); color: var(--ok); } .POST { background: var(--primary-soft); color: var(--primary); }
+.PUT { background: var(--warn-soft); color: var(--warn); } .DELETE { background: var(--err-soft); color: var(--err); }
+.callout { border-left: 4px solid var(--primary); background: var(--primary-soft); padding: 10px 14px; border-radius: 8px; margin: 12px 0; }
+.callout.warn { border-color: var(--warn); background: var(--warn-soft); }
+.callout.ok { border-color: var(--ok); background: var(--ok-soft); }
+.row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+
+/* Architecture */
+.arch { display: grid; gap: 10px; }
+.layer { display: grid; grid-template-columns: 130px 1fr; gap: 10px; align-items: stretch; }
+.layer-label { font-weight: 700; color: var(--muted); font-size: .8rem; text-transform: uppercase; letter-spacing: .04em; display: flex; align-items: center; }
+.boxes { display: flex; gap: 8px; flex-wrap: wrap; }
+.box { flex: 1 1 140px; border: 1px solid var(--border); background: var(--surface); border-radius: 10px; padding: 10px 12px; cursor: pointer; text-align: left; }
+.box strong { display: block; font-size: .92rem; }
+.box span { font-size: .78rem; color: var(--muted); }
+.box.sel { border-color: var(--primary); box-shadow: 0 0 0 2px var(--primary-soft); }
+.detail { margin-top: 12px; }
+
+/* Agents */
+.agent { cursor: pointer; text-align: left; width: 100%; }
+.agent .num { font-family: var(--mono); color: var(--primary); font-weight: 700; font-size: .8rem; }
+.agent.sel { border-color: var(--primary); box-shadow: 0 0 0 2px var(--primary-soft); }
+.agent-detail ul { margin: .3rem 0 .6rem; padding-left: 1.2rem; }
+
+/* Graph */
+.sim { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+.graph-wrap { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 8px; }
+svg.graph { width: 100%; height: auto; display: block; }
+.gnode rect { fill: var(--surface-2); stroke: var(--border); stroke-width: 1.5; rx: 9; transition: all .25s; }
+.gnode text { fill: var(--text); font: 600 12px system-ui, sans-serif; text-anchor: middle; dominant-baseline: middle; pointer-events: none; }
+.gnode.human rect { stroke: var(--human); stroke-dasharray: 4 3; }
+.gnode.terminal rect { fill: var(--primary-soft); }
+.gnode.visited rect { fill: var(--ok-soft); stroke: var(--ok); }
+.gnode.current rect { fill: var(--primary); stroke: var(--primary); }
+.gnode.current text { fill: #fff; }
+.gnode.failed rect { fill: var(--err-soft); stroke: var(--err); }
+.gedge { fill: none; stroke: var(--muted); stroke-width: 1.4; opacity: .55; transition: all .25s; }
+.gedge.loop { stroke-dasharray: 5 4; }
+.gedge.active { stroke: var(--primary); stroke-width: 3; opacity: 1; }
+.elabel { fill: var(--muted); font: 10.5px system-ui, sans-serif; }
+.legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: .8rem; color: var(--muted); padding: 6px 8px; }
+.legend i { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: 5px; vertical-align: -2px; border: 1.5px solid var(--border); }
+.panel { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; }
+.steplog { font-family: var(--mono); font-size: .8rem; max-height: 220px; overflow: auto; background: var(--code-bg); color: var(--code-text); border-radius: 9px; padding: 10px; margin-top: 10px; }
+.steplog div { padding: 1px 0; }
+.steplog .w { color: #fbbf24; } .steplog .e { color: #f87171; } .steplog .h { color: #fb923c; } .steplog .s { color: #4ade80; }
+.state { font-family: var(--mono); font-size: .8rem; margin-top: 10px; }
+.state div { display: flex; gap: 8px; padding: 2px 0; border-bottom: 1px dashed var(--border); }
+.state b { min-width: 140px; color: var(--muted); font-weight: 600; }
+.state .chg { background: var(--warn-soft); }
+.progress { height: 6px; background: var(--surface-2); border-radius: 9px; overflow: hidden; margin: 10px 0 4px; }
+.progress > div { height: 100%; background: var(--primary); width: 0; transition: width .3s; }
+
+/* Playgrounds */
+.result { margin-top: 10px; padding: 10px 12px; border-radius: 9px; font-weight: 600; }
+.result.ok { background: var(--ok-soft); color: var(--ok); }
+.result.bad { background: var(--err-soft); color: var(--err); }
+.result.info { background: var(--primary-soft); color: var(--primary); }
+details { border: 1px solid var(--border); border-radius: 10px; background: var(--surface); padding: 10px 14px; margin-bottom: 8px; }
+details summary { cursor: pointer; font-weight: 600; }
+details[open] summary { margin-bottom: 6px; }
+.tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
+.tabs button[aria-selected="true"] { background: var(--primary); color: #fff; border-color: var(--primary); }
+.cmd { position: relative; margin-bottom: 10px; }
+.cmd .copy { position: absolute; top: 7px; right: 7px; font-size: .75rem; padding: 3px 9px; background: rgba(255,255,255,.08); color: var(--code-text); border-color: rgba(255,255,255,.18); }
+.quiz-q { margin-bottom: 14px; }
+.quiz-q label { display: block; padding: 6px 10px; border: 1px solid var(--border); border-radius: 8px; margin: 5px 0; cursor: pointer; background: var(--surface); }
+.quiz-q label.right { border-color: var(--ok); background: var(--ok-soft); }
+.quiz-q label.wrong { border-color: var(--err); background: var(--err-soft); }
+.quiz-q .why { font-size: .86rem; color: var(--muted); display: none; margin-top: 4px; }
+.quiz-q.answered .why { display: block; }
+.flow-steps { counter-reset: s; list-style: none; padding: 0; margin: 0; }
+.flow-steps li { counter-increment: s; position: relative; padding: 8px 0 8px 44px; border-left: 2px solid var(--border); margin-left: 15px; }
+.flow-steps li::before { content: counter(s); position: absolute; left: -16px; top: 6px; width: 30px; height: 30px; border-radius: 50%; background: var(--surface); border: 2px solid var(--primary); color: var(--primary); display: grid; place-items: center; font-weight: 700; font-size: .85rem; }
+.flow-steps li.h::before { border-color: var(--human); color: var(--human); }
+.menu-btn { display: none; }
+
+@media (max-width: 900px) {
+  .layout { grid-template-columns: minmax(0, 1fr); }
+  .grid.g4, .grid.g3, .grid.g2 { grid-template-columns: minmax(0, 1fr); }
+  nav.side { position: fixed; inset: 0 30% 0 0; z-index: 20; transform: translateX(-105%); transition: transform .2s; height: 100vh; box-shadow: 0 0 40px rgba(0,0,0,.25); }
+  nav.side.open { transform: none; }
+  .menu-btn { display: inline-block; position: fixed; top: 10px; right: 12px; z-index: 30; }
+  .sim { grid-template-columns: 1fr; }
+  .layer { grid-template-columns: 1fr; }
+  main { padding-top: 56px; }
+}
+</style>
+</head>
+<body>
+<button class="menu-btn" id="menuBtn" aria-label="Open navigation" aria-expanded="false">☰ Menu</button>
+<div class="layout">
+<nav class="side" id="side" aria-label="Guide sections">
+  <div class="brand"><div class="logo">›_</div>DevFlow AI Guide</div>
+  <a href="#overview">1. Overview</a>
+  <a href="#journey">2. End-to-end journey</a>
+  <a href="#architecture">3. Architecture</a>
+  <a href="#agents">4. The nine agents</a>
+  <a href="#graph">5. LangGraph simulator</a>
+  <a href="#state">6. Shared ProjectState</a>
+  <a href="#routing">7. Routing playground</a>
+  <a href="#approvals">8. Approvals &amp; checkpoints</a>
+  <a href="#security">9. Security model</a>
+  <a href="#sandbox">10. Docker sandbox</a>
+  <a href="#api">11. REST API</a>
+  <a href="#setup">12. Setup &amp; run</a>
+  <a href="#testing">13. Testing</a>
+  <a href="#quiz">14. Check your understanding</a>
+  <button class="theme-btn" id="themeBtn" type="button">Toggle dark mode</button>
+</nav>
+
+<main>
+<!-- 1 OVERVIEW -->
+<section id="overview" class="hero">
+  <span class="pill">Learning &amp; documentation</span>
+  <h1>DevFlow AI, end to end</h1>
+  <p class="lead">DevFlow AI turns a plain-language software requirement into a reviewed GitHub pull request. Nine specialised AI agents act as a software team: a business analyst, an architect, developers, QA, a security reviewer and a release engineer. A <strong>LangGraph StateGraph</strong> coordinates them, and a <strong>human approves</strong> every step with side effects.</p>
+  <div class="grid g4">
+    <div class="card"><div class="stat">9</div><div class="muted small">specialised agents</div></div>
+    <div class="card"><div class="stat">13</div><div class="muted small">graph nodes, incl. 2 human gates</div></div>
+    <div class="card"><div class="stat">64 + 15</div><div class="muted small">backend + frontend tests</div></div>
+    <div class="card"><div class="stat">0</div><div class="muted small">auto-merges (PRs are never merged)</div></div>
+  </div>
+  <h3>Three principles</h3>
+  <div class="grid g3">
+    <div class="card"><h4>Agents propose, humans approve</h4><p class="small muted">Generated code runs in the sandbox only after an execution approval, and nothing is pushed until a release approval.</p></div>
+    <div class="card"><h4>Verify, don't trust</h4><p class="small muted">LLM output is schema-validated, file edits are guarded, tests really run, and the review is independent and fingerprinted.</p></div>
+    <div class="card"><h4>Never silent</h4><p class="small muted">Every agent execution, log line, diff, test run and review is persisted and streamed live to the dashboard.</p></div>
+  </div>
+</section>
+
+<!-- 2 JOURNEY -->
+<section id="journey">
+  <h2>End-to-end journey</h2>
+  <p class="lead">What a user does and what happens behind the scenes. Steps in orange are human decisions.</p>
+  <ol class="flow-steps">
+    <li><strong>Sign in</strong> to the dashboard. The account uses JWT auth, and passwords are PBKDF2-hashed.</li>
+    <li><strong>Connect GitHub</strong> in Settings with a fine-grained token. It is validated against GitHub and Fernet-encrypted at rest.</li>
+    <li><strong>Create project</strong>: pick a repository and a base branch. Branches are listed with their protection status.</li>
+    <li><strong>Enter a requirement</strong> and click <em>Start workflow</em>. <code>POST /api/workflows/start</code> returns 202 and the graph starts on a worker thread.</li>
+    <li><strong>Requirement Analyst</strong> produces objectives, requirements, ambiguities and acceptance criteria.</li>
+    <li><strong>Repository Analyst</strong> clones the repo into an isolated workspace and detects languages, frameworks, test commands and relevant files.</li>
+    <li><strong>Architect</strong> designs the approach, the endpoints, the data models and a file plan.</li>
+    <li><strong>Task Orchestrator</strong> validates the task DAG and assigns tasks to the frontend and/or backend developer.</li>
+    <li><strong>Developers</strong> write complete files through the guarded workspace. They run in parallel, or in order when there are dependencies.</li>
+    <li class="h"><strong>Approve execution</strong>: review the exact sandbox image and commands.</li>
+    <li><strong>QA</strong> runs tests, lint and build in Docker. Failures go back to the responsible developer, within the retry limit.</li>
+    <li><strong>Code Review &amp; Security</strong> combines automated checks with an LLM review. A rejection sends feedback back to the developers.</li>
+    <li class="h"><strong>Approve release</strong>: check the branch, files, tests and review verdict.</li>
+    <li><strong>GitHub Release</strong> creates the feature branch, commits only the approved files, pushes, and opens the PR. You get the PR URL, the commit SHA and a summary.</li>
+  </ol>
+</section>
+
+<!-- 3 ARCHITECTURE -->
+<section id="architecture">
+  <h2>Architecture</h2>
+  <p class="lead">Click a component to see what it does and where it lives in the codebase.</p>
+  <div class="arch" id="arch"></div>
+  <div class="card detail" id="archDetail" aria-live="polite"></div>
+</section>
+
+<!-- 4 AGENTS -->
+<section id="agents">
+  <h2>The nine agents</h2>
+  <p class="lead">Each agent has a single responsibility, a typed output, and guardrails enforced in code rather than in the prompt. Select an agent.</p>
+  <div class="grid g3" id="agentGrid"></div>
+  <div class="card detail agent-detail" id="agentDetail" aria-live="polite"></div>
+</section>
+
+<!-- 5 GRAPH -->
+<section id="graph">
+  <h2>LangGraph workflow simulator</h2>
+  <p class="lead">This is the real graph from <code>backend/app/orchestration/graph.py</code>. Pick a scenario and step through it to watch the state change and the conditional edges fire.</p>
+  <div class="row" style="margin-bottom:10px">
+    <label for="scenario" class="small muted">Scenario</label>
+    <select id="scenario"></select>
+    <button id="prevBtn" type="button">◀ Back</button>
+    <button id="nextBtn" type="button" class="primary">Step ▶</button>
+    <button id="playBtn" type="button">▶ Play</button>
+    <button id="resetBtn" type="button">Reset</button>
+  </div>
+  <div class="sim">
+    <div class="graph-wrap">
+      <svg class="graph" id="graphSvg" viewBox="0 0 760 900" role="img" aria-label="DevFlow AI LangGraph state graph"></svg>
+      <div class="legend">
+        <span><i style="background:var(--primary)"></i>current</span>
+        <span><i style="background:var(--ok-soft);border-color:var(--ok)"></i>visited</span>
+        <span><i style="border-color:var(--human);border-style:dashed"></i>human gate (interrupt)</span>
+        <span><i style="border-style:dashed"></i>retry loop edge</span>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="row" style="justify-content:space-between"><strong id="stepTitle">Ready</strong><span class="small muted" id="stepCount"></span></div>
+      <div class="progress"><div id="stepProgress"></div></div>
+      <p class="small" id="stepDesc">Choose a scenario and press <em>Step</em>.</p>
+      <div class="state" id="stateView"></div>
+      <div class="steplog" id="stepLog" aria-live="polite"></div>
+    </div>
+  </div>
+</section>
+
+<!-- 6 STATE -->
+<section id="state">
+  <h2>Shared <code>ProjectState</code></h2>
+  <p class="lead">A <code>TypedDict</code> that every node reads and updates. It is checkpointed after every super-step, so it holds only JSON data and never secrets. Keys that the two parallel developer nodes can both write use <strong>reducers</strong>.</p>
+  <div class="row" style="margin-bottom:8px"><input type="search" id="stateFilter" placeholder="Filter fields…" aria-label="Filter state fields"></div>
+  <div class="table-wrap"><table><thead><tr><th>Field</th><th>Written by</th><th>Reducer / notes</th></tr></thead><tbody id="stateTable"></tbody></table></div>
+</section>
+
+<!-- 7 ROUTING -->
+<section id="routing">
+  <h2>Routing playground</h2>
+  <p class="lead">The conditional edges are pure functions of the state (<code>routing.py</code>), so a resumed workflow takes exactly the same path. Set a state and see where the graph goes next.</p>
+  <div class="grid g2">
+    <div class="card">
+      <div class="grid" style="gap:10px">
+        <label class="small">Edge after node
+          <select id="rNode" style="width:100%"><option value="testing">testing</option><option value="code_review">code_review</option></select></label>
+        <label class="small">workflow_status
+          <select id="rStatus" style="width:100%"></select></label>
+        <div class="row"><label class="small">retry_count <input type="number" id="rRetry" value="1" min="0" max="12" style="width:80px"></label>
+        <label class="small">max_retries <input type="number" id="rMax" value="3" min="0" max="10" style="width:80px"></label></div>
+        <div class="row small"><label><input type="checkbox" id="rFe"> frontend responsible</label><label><input type="checkbox" id="rBe" checked> backend responsible</label></div>
+      </div>
+      <div id="rResult" class="result info" aria-live="polite"></div>
+    </div>
+    <div class="card">
+      <h4>Conditional edges</h4>
+      <div class="table-wrap" style="border:0"><table>
+        <tr><td>Tests passed / not run</td><td><code>testing → code_review</code></td></tr>
+        <tr><td>Tests failed, retries left</td><td><code>→ responsible developer(s)</code></td></tr>
+        <tr><td>Review approved</td><td><code>code_review → release_approval</code></td></tr>
+        <tr><td>Review rejected, retries left</td><td><code>→ responsible developer(s)</code></td></tr>
+        <tr><td>Maximum retry reached</td><td><code>→ max_retries_exceeded → END</code></td></tr>
+        <tr><td>Cancelled / failed</td><td><code>→ END</code> from any node</td></tr>
+        <tr><td>FE task depends on BE task</td><td>backend runs first, then frontend</td></tr>
+      </table></div>
+      <p class="small muted">The retry counter is shared by test and review failures. With <code>max_retries = 3</code> there are at most 3 correction rounds.</p>
+    </div>
+  </div>
+</section>
+
+<!-- 8 APPROVALS -->
+<section id="approvals">
+  <h2>Human approvals &amp; checkpoint recovery</h2>
+  <div class="grid g2">
+    <div class="card">
+      <h4>How an approval gate works</h4>
+      <ol class="small">
+        <li>The node calls <code>interrupt(payload)</code>. LangGraph saves a checkpoint and stops.</li>
+        <li>The runner sees the interrupt and stores <code>pending_approval</code>, and the status becomes <code>awaiting_approval</code>.</li>
+        <li>The dashboard shows the payload: exact commands for the <em>execution</em> gate, or branch, files, tests and review for the <em>release</em> gate.</li>
+        <li><code>POST /approve {approved, comment}</code> resumes the graph with <code>Command(resume=…)</code>.</li>
+        <li>Approve: the node returns and routing continues. Reject: <code>workflow_status = cancelled</code> and the graph goes to END, so nothing is pushed.</li>
+      </ol>
+      <pre><code>decision = interrupt({"gate": "release", "feature_branch": ..., "test_status": ...})
+if not decision.get("approved"):
+    return {"workflow_status": "cancelled"}</code></pre>
+    </div>
+    <div class="card">
+      <h4>Checkpointing</h4>
+      <p class="small">The graph is compiled with a <code>PostgresSaver</code> (or SQLite or memory), using <code>thread_id = workflow_id</code>. A checkpoint is written after every super-step.</p>
+      <ul class="small">
+        <li><strong>Interruption by approval:</strong> the run can wait for hours; resuming loads the checkpoint.</li>
+        <li><strong>Crash or restart:</strong> on startup, <code>resume_interrupted()</code> finds workflows that are still <code>running</code> and calls <code>graph.invoke(None)</code>, which continues from the last completed node.</li>
+        <li><strong>Verified:</strong> <code>test_checkpoint_recovery_after_crash</code> kills a run inside QA, starts a new manager, and asserts that earlier stages were not re-run.</li>
+      </ul>
+      <div class="callout warn small">Nodes are written to be safe to re-run from their start. After an interrupt the gate node runs again, so all side effects happen <em>after</em> the <code>interrupt()</code> call.</div>
+    </div>
+  </div>
+</section>
+
+<!-- 9 SECURITY -->
+<section id="security">
+  <h2>Security model</h2>
+  <p class="lead">Guardrails are enforced in code, so they hold even if a model ignores its instructions.</p>
+  <div id="secList"></div>
+  <h3>Path-guard playground</h3>
+  <p class="small muted">This is a JavaScript port of <code>Workspace.resolve()</code> plus the developer-agent content checks. Try <code>../etc/passwd</code>, <code>.git/config</code>, <code>.env</code>, <code>node_modules/x.js</code> or <code>src/api/users.ts</code>.</p>
+  <div class="card">
+    <div class="row"><input type="text" id="pathIn" value="src/api/users.ts" aria-label="Path an agent wants to write" style="flex:1 1 260px">
+      <label class="small"><input type="checkbox" id="pathSeen" checked> agent was shown current content</label>
+      <label class="small"><input type="checkbox" id="pathExists"> file already exists</label></div>
+    <div id="pathResult" class="result" aria-live="polite"></div>
+  </div>
+</section>
+
+<!-- 10 SANDBOX -->
+<section id="sandbox">
+  <h2>Docker sandbox</h2>
+  <p class="lead">QA never runs generated code on the host. Hover over or tap a flag to see why it is there.</p>
+  <div class="card">
+    <pre id="dockerCmd" style="white-space:pre-wrap"></pre>
+    <div id="flagInfo" class="result info small" aria-live="polite">Select a flag above.</div>
+  </div>
+  <h3>Lifecycle of a QA run</h3>
+  <ol class="small">
+    <li><code>docker create</code>: limits applied, network <code>none</code> unless "allow network for install" is on.</li>
+    <li><code>docker cp workspace/. → /workspace</code>: a copy, so there are no bind mounts and the host files cannot be modified.</li>
+    <li><code>docker start -a</code> runs the install commands. Its exit code and output are captured.</li>
+    <li><code>docker commit</code> snapshots the container to a temporary image.</li>
+    <li><code>docker run --rm --network none</code> runs each test, lint and build command with a hard timeout (killed on expiry).</li>
+    <li>The container and image are removed. Only output, exit codes and durations are kept.</li>
+  </ol>
+  <div class="callout small">If Docker is unavailable, QA raises <code>SandboxError</code> and the workflow fails visibly. There is no host fallback.</div>
+</section>
+
+<!-- 11 API -->
+<section id="api">
+  <h2>REST API</h2>
+  <p class="lead">Every endpoint except auth and <code>/health</code> requires <code>Authorization: Bearer &lt;jwt&gt;</code>. Full OpenAPI docs are at <code>/docs</code>.</p>
+  <div class="row" style="margin-bottom:8px"><input type="search" id="apiFilter" placeholder="Filter endpoints…" aria-label="Filter endpoints" style="flex:1 1 240px"></div>
+  <div class="table-wrap"><table><thead><tr><th>Method</th><th>Path</th><th>Purpose</th></tr></thead><tbody id="apiTable"></tbody></table></div>
+  <h3>Try it with curl</h3>
+  <div class="cmd"><pre><code>TOKEN=$(curl -s -X POST localhost:8000/api/auth/login -H 'content-type: application/json' \
+  -d '{"email":"you@example.com","password":"your-password"}' | jq -r .access_token)
+curl -s -X POST localhost:8000/api/workflows/start -H "Authorization: Bearer $TOKEN" \
+  -H 'content-type: application/json' \
+  -d '{"project_id":"&lt;id&gt;","requirement":"Add a GET /api/health endpoint with a test"}'</code></pre></div>
+</section>
+
+<!-- 12 SETUP -->
+<section id="setup">
+  <h2>Setup &amp; run</h2>
+  <div class="tabs" role="tablist" id="setupTabs"></div>
+  <div id="setupBody"></div>
+  <h3>Key environment variables</h3>
+  <div class="table-wrap"><table><thead><tr><th>Variable</th><th>Default</th><th>Purpose</th></tr></thead><tbody id="envTable"></tbody></table></div>
+</section>
+
+<!-- 13 TESTING -->
+<section id="testing">
+  <h2>Testing &amp; quality</h2>
+  <div class="grid g2">
+    <div class="card"><h4>Backend (pytest, 64 tests)</h4>
+      <ul class="small">
+        <li><strong>Unit:</strong> security helpers, LLM service (validation retries, redaction, Ollama and OpenAI wire formats), repository inspection and path guards, every agent, routing and reducers.</li>
+        <li><strong>API:</strong> auth, settings (the API key is never echoed back), GitHub connect, repos and branches (mocked), validation and ownership.</li>
+        <li><strong>End-to-end graph through the REST API:</strong> a test failure followed by a fix and a PR, max retries, review rejection, release rejection, cancellation, crash recovery from a checkpoint, and pytest really running in the Docker sandbox.</li>
+        <li>The same suite passes on SQLite and on PostgreSQL (<code>TEST_POSTGRES_URL</code>).</li>
+      </ul></div>
+    <div class="card"><h4>Frontend (Vitest + RTL, 15 tests)</h4>
+      <ul class="small">
+        <li>Diff parsing and rendering, status chips, agent progress derivation.</li>
+        <li>Approval panel decisions, agent monitor, log merging for SSE plus polling.</li>
+        <li>Login flow and Create Project (connect repo → create project → start workflow).</li>
+        <li><code>tsc</code> strict type-check and production build.</li>
+      </ul></div>
+  </div>
+  <div class="callout warn small"><strong>What uses test doubles:</strong> the LLM (a scripted provider that implements the same interface) and the GitHub REST API (an httpx mock transport). Git clone, commit and push, the LangGraph graph, the database and the Docker sandbox all run for real.</div>
+</section>
+
+<!-- 14 QUIZ -->
+<section id="quiz">
+  <h2>Check your understanding</h2>
+  <div id="quizBox"></div>
+  <p class="small muted" id="quizScore"></p>
+</section>
+</main>
+</div>
+
+<script>
+(function () {
+  'use strict';
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+  /* ---------- theme & nav ---------- */
+  const root = document.documentElement;
+  try { const t = localStorage.getItem('devflow-guide-theme'); if (t) root.dataset.theme = t; } catch (e) { /* storage unavailable */ }
+  $('themeBtn').addEventListener('click', () => {
+    const dark = root.dataset.theme ? root.dataset.theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
+    root.dataset.theme = dark ? 'light' : 'dark';
+    try { localStorage.setItem('devflow-guide-theme', root.dataset.theme); } catch (e) { /* ignore */ }
+  });
+  const side = $('side');
+  $('menuBtn').addEventListener('click', () => { side.classList.toggle('open'); $('menuBtn').setAttribute('aria-expanded', side.classList.contains('open')); });
+  side.querySelectorAll('a').forEach((a) => a.addEventListener('click', () => side.classList.remove('open')));
+  const links = [...side.querySelectorAll('a')];
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach((e) => { if (e.isIntersecting) links.forEach((l) => l.classList.toggle('active', l.getAttribute('href') === '#' + e.target.id)); });
+  }, { rootMargin: '-30% 0px -65% 0px' });
+  document.querySelectorAll('main section').forEach((s) => observer.observe(s));
+
+  /* ---------- architecture ---------- */
+  const ARCH = [
+    { layer: 'Client', items: [
+      { id: 'ui', name: 'React dashboard', sub: 'Vite · MUI · Redux Toolkit', path: 'frontend/src', text: 'Screens include Dashboard, Create Project, the Agent Execution Monitor (tabs for agents, analysis, tasks, code changes, tests and review, GitHub results and logs), workflow history and Settings. Axios calls the REST API. <code>useWorkflowStream</code> subscribes to Server-Sent Events and falls back to polling.' } ] },
+    { layer: 'API', items: [
+      { id: 'api', name: 'FastAPI routes', sub: 'auth · projects · github · workflows · settings', path: 'backend/app/api/routes', text: 'Pydantic validates every request and response. JWT bearer auth and per-user ownership checks apply to every resource. Domain errors map to proper HTTP status codes (404, 409, 412, 502, …).' },
+      { id: 'sse', name: 'SSE stream', sub: '/api/workflows/{id}/events', path: 'backend/app/api/routes/workflows.py', text: 'Polls the <code>workflow_logs</code> table and the workflow snapshot every second. It emits <code>log</code>, <code>workflow</code> and <code>end</code> events, so it works behind nginx (with buffering disabled).' } ] },
+    { layer: 'Orchestration', items: [
+      { id: 'manager', name: 'WorkflowManager', sub: 'thread pool · approvals · recovery', path: 'backend/app/services/workflow_service.py', text: 'Starts graphs on worker threads, records interrupts as <code>pending_approval</code>, resumes with <code>Command(resume=…)</code>, handles cancellation, and resumes interrupted runs on startup. <code>DBRecorder</code> persists agent executions, tasks, diffs, tests, reviews and PRs.' },
+      { id: 'graph', name: 'LangGraph StateGraph', sub: 'nodes · routing · checkpoints', path: 'backend/app/orchestration', text: '<code>graph.py</code> wires 13 nodes with conditional edges. <code>nodes.py</code> wraps every agent with cancellation checks, a timeout, execution tracking and failure capture. <code>routing.py</code> holds pure routing functions, and <code>state.py</code> holds <code>ProjectState</code> and its reducers.' } ] },
+    { layer: 'Agents', items: [
+      { id: 'agents', name: '9 agents', sub: 'analyst → … → release', path: 'backend/app/agents', text: 'Each agent receives the runtime (services, recorder) and returns a typed result. See the next section for details.' } ] },
+    { layer: 'Services', items: [
+      { id: 'llm', name: 'LLMService', sub: 'Ollama · OpenAI · Mistral', path: 'backend/app/services/llm_service.py', text: 'Provider abstraction with JSON-schema constrained output. Responses are validated with Pydantic; when validation fails, the model is shown the error and asked to correct itself. Transient errors are retried with backoff, every prompt is passed through secret redaction, and each agent can use its own model.' },
+      { id: 'repo', name: 'RepositoryService', sub: 'git workspaces · analysis', path: 'backend/app/services/repository_service.py', text: 'Clones into <code>WORKSPACE_ROOT/&lt;workflow&gt;/repo</code>. It detects components (Node, Python, Go) along with their install, test, lint and build commands. <code>Workspace</code> guards every path, and provides diff, numstat, commit-only-these-files and push, with the token passed through the environment.' },
+      { id: 'gh', name: 'GitHubService', sub: 'REST API', path: 'backend/app/services/github_service.py', text: 'Handles the user, repositories, branches, branch protection and pull requests (create and status). Errors carry hints (401 means an invalid token; 403 means missing permission or a rate limit).' },
+      { id: 'sbx', name: 'DockerSandbox', sub: 'isolated execution', path: 'backend/app/services/execution_service.py', text: 'Runs install and test commands in throwaway containers with no mounts, no network, no capabilities, and resource and time limits.' } ] },
+    { layer: 'Data', items: [
+      { id: 'pg', name: 'PostgreSQL', sub: 'SQLAlchemy 2 · Alembic', path: 'backend/app/models', text: 'Tables: users, user_settings, github_connections (encrypted), github_repositories, projects, workflow_executions, agent_executions, workflow_logs, development_tasks, file_changes, test_results, code_review_reports, pull_requests.' },
+      { id: 'ckpt', name: 'Checkpointer', sub: 'PostgresSaver', path: 'backend/app/orchestration/checkpointing.py', text: 'LangGraph checkpoints, keyed by workflow id, that make the workflow durable across approvals and restarts.' } ] },
+  ];
+  const archEl = $('arch');
+  ARCH.forEach((layer) => {
+    const row = document.createElement('div'); row.className = 'layer';
+    row.innerHTML = `<div class="layer-label">${layer.layer}</div><div class="boxes">${layer.items.map((i) => `<button type="button" class="box" data-id="${i.id}"><strong>${i.name}</strong><span>${i.sub}</span></button>`).join('')}</div>`;
+    archEl.appendChild(row);
+  });
+  const archItems = Object.fromEntries(ARCH.flatMap((l) => l.items).map((i) => [i.id, i]));
+  function showArch(id) {
+    archEl.querySelectorAll('.box').forEach((b) => b.classList.toggle('sel', b.dataset.id === id));
+    const i = archItems[id];
+    $('archDetail').innerHTML = `<h4>${i.name} <span class="pill">${esc(i.path)}</span></h4><p class="small" style="margin:.4rem 0 0">${i.text}</p>`;
+  }
+  archEl.addEventListener('click', (e) => { const b = e.target.closest('.box'); if (b) showArch(b.dataset.id); });
+  showArch('graph');
+
+  /* ---------- agents ---------- */
+  const AGENTS = [
+    { n: 1, name: 'Requirement Analyst', file: 'agents/requirement_agent.py', node: 'requirement_analysis', role: 'Business analyst',
+      does: ['Identifies business objectives', 'Extracts functional (FR-n) and non-functional requirements', 'Lists ambiguities and assumptions', 'Writes testable acceptance criteria', 'Proposes tasks labelled by area'],
+      out: 'RequirementAnalysis', guard: ['Lenient schema normalisation (string→list, case-insensitive enums), then strict validation', 'Falls back to FRs when the model omits acceptance criteria'] },
+    { n: 2, name: 'Repository Analyst', file: 'agents/repository_agent.py', node: 'repository_analysis', role: 'Staff engineer',
+      does: ['Clones the base branch into an isolated workspace', 'Deterministically detects languages, frameworks and components', 'Finds dependency, config and test files, plus install/test/lint/build commands', 'Uses the LLM to summarise architecture and conventions and pick relevant files'],
+      out: 'RepositoryAnalysis', guard: ['Suggested files are validated against disk; hallucinated references are dropped', 'Unsafe paths are rejected', 'Credential files are never read'] },
+    { n: 3, name: 'Software Architect', file: 'agents/architecture_agent.py', node: 'architecture_design', role: 'Architect',
+      does: ['Designs the approach within existing patterns', 'Defines frontend and backend changes', 'Specifies API endpoints, data models and validation rules', 'Produces a file plan, testing strategy and risks'],
+      out: 'ArchitecturePlan', guard: ['The create/modify action of each file is corrected from disk', 'The area (frontend/backend) is inferred from the component that owns the path'] },
+    { n: 4, name: 'Task Orchestrator', file: 'agents/task_agent.py + orchestration/', node: 'task_planning', role: 'Engineering lead',
+      does: ['Turns the plan into small tasks with dependencies', 'Assigns frontend or backend agents', 'Routes failures back to the responsible agent', 'Integrates the parallel results (development_join) and enforces the retry limit'],
+      out: 'TaskState[]', guard: ['Unique ids; unknown dependencies dropped', 'Cycles broken with Kahn’s algorithm', 'Agents that do not exist for the repo are reassigned', 'Derives tasks from the file plan when the model returns none'] },
+    { n: 5, name: 'Frontend Developer', file: 'agents/frontend_agent.py', node: 'frontend_development', role: 'Frontend engineer',
+      does: ['Creates or modifies React/TypeScript components', 'Defines types, integrates APIs', 'Adds loading, error and success states', 'Writes component tests'],
+      out: 'CodeChangeSet', guard: ['Activated only when frontend tasks exist', 'Shares the developer guards (see Security)'] },
+    { n: 6, name: 'Backend Developer', file: 'agents/backend_agent.py', node: 'backend_development', role: 'Backend engineer',
+      does: ['Implements endpoints, services, schemas and models', 'Validates input, handles errors', 'Writes backend tests'],
+      out: 'CodeChangeSet', guard: ['Activated only when backend tasks exist', 'Cannot touch files owned by the frontend agent in the same run'] },
+    { n: 7, name: 'QA & Testing', file: 'agents/testing_agent.py', node: 'testing', role: 'QA engineer',
+      does: ['Selects the components touched by the change', 'Runs install, test, lint and build in the sandbox', 'Has the LLM analyse failures and assign the responsible developer', 'Reports coverage gaps'],
+      out: 'TestReport', guard: ['passed only if at least one test command ran AND every command exited 0', 'No tests means not_run, never success', 'If the sandbox is unavailable, the workflow fails with no host fallback'] },
+    { n: 8, name: 'Code Review & Security', file: 'agents/review_agent.py', node: 'code_review', role: 'Independent reviewer',
+      does: ['Runs automated checks: secrets, out-of-plan files, large deletions, debug code, test status', 'Runs an LLM review against the requirement and acceptance criteria', 'Returns approval or actionable feedback per developer'],
+      out: 'ReviewReport', guard: ['Read-only: sees only the diff', 'Can use a different model', 'Critical or high findings block approval even if the LLM approves', 'The approved diff is fingerprinted with SHA-256'] },
+    { n: 9, name: 'GitHub Release', file: 'agents/github_agent.py', node: 'github_release', role: 'Release engineer',
+      does: ['Generates the branch name devflow/<slug>-<id>', 'Creates the branch, commits only the approved files, pushes', 'Opens a PR with the requirement, plan, tasks, test results and review', 'Returns the branch, commit SHA and PR URL'],
+      out: 'branch, commit, PR', guard: ['Refuses if the workspace diff differs from the reviewed diff', 'Never pushes to the base branch or protected branches', 'Never merges'] },
+  ];
+  const ag = $('agentGrid');
+  ag.innerHTML = AGENTS.map((a, i) => `<button type="button" class="card agent" data-i="${i}"><div class="num">AGENT ${a.n} · ${esc(a.node)}</div><h4>${a.name}</h4><div class="small muted">${a.role}</div></button>`).join('');
+  function showAgent(i) {
+    const a = AGENTS[i];
+    ag.querySelectorAll('.agent').forEach((b) => b.classList.toggle('sel', Number(b.dataset.i) === i));
+    $('agentDetail').innerHTML = `<h4>${a.n}. ${a.name} <span class="pill">backend/app/${esc(a.file)}</span></h4>
+      <div class="grid g2" style="margin-top:6px"><div><strong class="small">Responsibilities</strong><ul class="small">${a.does.map((d) => `<li>${esc(d)}</li>`).join('')}</ul>
+      <strong class="small">Output</strong> <code>${esc(a.out)}</code></div>
+      <div><strong class="small">Guardrails enforced in code</strong><ul class="small">${a.guard.map((d) => `<li>${esc(d)}</li>`).join('')}</ul></div></div>`;
+  }
+  ag.addEventListener('click', (e) => { const b = e.target.closest('.agent'); if (b) showAgent(Number(b.dataset.i)); });
+  showAgent(0);
+
+  /* ---------- graph ---------- */
+  const NODES = {
+    START: [380, 30, 'START', 'terminal'], requirement_analysis: [380, 90], repository_analysis: [380, 150], architecture_design: [380, 210],
+    task_planning: [380, 270], frontend_development: [215, 345], backend_development: [545, 345], development_join: [380, 420],
+    execution_approval: [380, 485, null, 'human'], testing: [380, 550], code_review: [380, 625], max_retries_exceeded: [640, 690],
+    release_approval: [380, 700, null, 'human'], github_release: [380, 770], END: [380, 850, 'END', 'terminal'],
+  };
+  const W = 190, H = 34;
+  const EDGES = [
+    ['START', 'requirement_analysis'], ['requirement_analysis', 'repository_analysis'], ['repository_analysis', 'architecture_design'],
+    ['architecture_design', 'task_planning'], ['task_planning', 'frontend_development'], ['task_planning', 'backend_development'],
+    ['backend_development', 'frontend_development', 'sequential'], ['frontend_development', 'development_join'], ['backend_development', 'development_join'],
+    ['development_join', 'execution_approval'], ['execution_approval', 'testing', 'approved'], ['testing', 'code_review', 'passed'],
+    ['testing', 'frontend_development', 'tests failed', 'loop'], ['testing', 'backend_development', 'tests failed', 'loop'],
+    ['code_review', 'frontend_development', 'review failed', 'loop'], ['code_review', 'backend_development', 'review failed', 'loop'],
+    ['testing', 'max_retries_exceeded', 'max retries'], ['code_review', 'max_retries_exceeded', 'max retries'],
+    ['max_retries_exceeded', 'END'], ['code_review', 'release_approval', 'approved'], ['release_approval', 'github_release', 'approved'],
+    ['github_release', 'END'], ['execution_approval', 'END', 'rejected / cancelled', 'cancel'], ['release_approval', 'END', 'rejected', 'cancel'],
+  ];
+  const svg = $('graphSvg');
+  const NS = 'http://www.w3.org/2000/svg';
+  const el = (tag, attrs) => { const e = document.createElementNS(NS, tag); Object.entries(attrs).forEach(([k, v]) => e.setAttribute(k, v)); return e; };
+  const defs = el('defs', {});
+  const marker = el('marker', { id: 'arr', viewBox: '0 0 10 10', refX: 9, refY: 5, markerWidth: 7, markerHeight: 7, orient: 'auto-start-reverse' });
+  marker.appendChild(el('path', { d: 'M0,0 L10,5 L0,10 z', fill: 'currentColor' }));
+  defs.appendChild(marker); svg.appendChild(defs);
+  function edgePath(a, b, kind) {
+    const [ax, ay] = NODES[a], [bx, by] = NODES[b];
+    if (kind === 'loop') {
+      const left = b === 'frontend_development';
+      const sx = left ? ax - W / 2 : ax + W / 2, ex = bx + (left ? -W / 2 : W / 2) * 0.6;
+      const bend = left ? 40 : 720;
+      return `M${sx},${ay} C${bend},${ay} ${bend},${by + 40} ${ex},${by + H / 2}`;
+    }
+    if (kind === 'cancel') {
+      const sx = ax - W / 2;
+      return `M${sx},${ay} C${120},${ay} ${120},${by} ${bx - 26},${by}`;
+    }
+    if (a === 'backend_development' && b === 'frontend_development') return `M${ax - W / 2},${ay} L${bx + W / 2},${by}`;
+    if (b === 'max_retries_exceeded') return `M${ax + W / 2},${ay} L${bx - 50},${by - H / 2}`;
+    if (a === 'max_retries_exceeded') return `M${ax},${ay + H / 2} C${ax},${by} ${ax},${by} ${bx + 26},${by}`;
+    return `M${ax},${ay + H / 2} L${bx},${by - H / 2}`;
+  }
+  const edgeEls = {};
+  EDGES.forEach(([a, b, label, kind]) => {
+    const p = el('path', { d: edgePath(a, b, kind), class: 'gedge' + (kind === 'loop' || kind === 'cancel' ? ' loop' : ''), 'marker-end': 'url(#arr)', style: 'color:var(--muted)' });
+    svg.appendChild(p);
+    (edgeEls[a + '>' + b] = edgeEls[a + '>' + b] || []).push(p);
+  });
+  [['tests failed → developer (retry)', 22, 520], ['review failed → developer', 22, 600], ['rejected / cancelled', 22, 800], ['max retries', 600, 650], ['sequential: FE needs BE', 322, 364]].forEach(([t, x, y]) => {
+    const tx = el('text', { x, y, class: 'elabel' }); tx.textContent = t; svg.appendChild(tx);
+  });
+  const nodeEls = {};
+  Object.entries(NODES).forEach(([id, [x, y, label, cls]]) => {
+    const g = el('g', { class: 'gnode ' + (cls || ''), 'data-node': id });
+    const w = cls === 'terminal' ? 52 : W;
+    g.appendChild(el('rect', { x: x - w / 2, y: y - H / 2, width: w, height: H }));
+    const t = el('text', { x, y }); t.textContent = (cls === 'human' ? '👤 ' : '') + (label || id);
+    g.appendChild(t); svg.appendChild(g); nodeEls[id] = g;
+  });
+
+  const BASE_STATE = { workflow_status: 'running', retry_count: 0, max_retries: 3, active_agents: '[]', development_tasks: '[]', modified_files: '[]', test_results: '—', review_feedback: '—', execution_approved: 'false', feature_branch: '—', pull_request_url: '—' };
+  const S = (node, title, desc, logs, state, extra) => ({ node, title, desc, logs, state: state || {}, ...extra });
+  const COMMON_HEAD = [
+    S('requirement_analysis', 'Requirement analysis', 'The analyst turns the request into a structured RequirementAnalysis.', [['', 'requirement_analyst: 4 FRs, 5 acceptance criteria, 1 open question']], { acceptance_criteria: '[5 items]' }),
+    S('repository_analysis', 'Repository analysis', 'Clone into an isolated workspace; detect components and test commands.', [['', 'repository_analyst: cloned main; components: frontend (react), backend (fastapi)']], { repository_path: '/workspaces/wf/repo' }),
+    S('architecture_design', 'Architecture design', 'The approach, endpoints, models and file plan are defined.', [['', 'architect: 2 endpoints, 1 data model, 5 files']], { architecture_plan: '{approach, file_plan…}' }),
+    S('task_planning', 'Task planning', 'Tasks are validated and the routing decides: the frontend task depends on the backend task, so the developers run sequentially.', [['', 'task_orchestrator: T1 [backend] API + tests; T2 [frontend] UI depends on T1']], { development_tasks: '[T1 backend, T2 frontend]', active_agents: '[backend, frontend]', feature_branch: 'devflow/todo-filter-3f2a' }),
+    S('backend_development', 'Backend development', 'The backend developer writes complete files through the guarded workspace.', [['', 'backend_developer: created app/api/todos.py, tests/test_todos.py']], { modified_files: '[app/api/todos.py, …]' }, { edge: 'task_planning>backend_development' }),
+    S('frontend_development', 'Frontend development', 'Runs after the backend because T2 depends on T1 (sequential edge).', [['', 'frontend_developer: updated src/TodoList.tsx, created src/TodoFilter.tsx']], { modified_files: '[… 5 files]' }, { edge: 'backend_development>frontend_development' }),
+    S('development_join', 'Integrate changes', 'The real git diff is computed and persisted per file (FileChange rows).', [['', 'task_orchestrator: integrated 5 changed files']], {}),
+    S('execution_approval', 'Approval gate: execution', 'interrupt() pauses the graph. The dashboard shows the exact sandbox commands. The user clicks Approve.', [['h', '👤 waiting for approval: run generated code in sandbox'], ['h', '👤 approved by user']], { execution_approved: 'true' }),
+  ];
+  const testPass = (round) => S('testing', `QA - round ${round}`, 'Tests, lint and build run in the Docker sandbox and all exit 0.', [['s', `qa_engineer: all 4 commands passed (pytest, vitest, lint, build)`]], { test_results: '{status: passed}', workflow_status: 'running' });
+  const reviewOk = S('code_review', 'Code review', 'The automated checks are clean and the LLM approves. The diff fingerprint is recorded.', [['s', 'code_reviewer: approved, diff sha256=9c1e…']], { review_feedback: '{approved: true}', approved_diff_hash: '9c1e…' });
+  const TAIL_OK = [
+    S('release_approval', 'Approval gate: release', 'The user reviews the branch, files, tests and verdict, then approves the push and PR.', [['h', '👤 waiting for approval: push + pull request'], ['h', '👤 approved by user']], { release_approved: 'true' }),
+    S('github_release', 'GitHub release', 'Create the branch, commit only the approved files, push, open the PR.', [['s', 'release_engineer: pushed devflow/todo-filter-3f2a, PR #42 opened']], { commit_id: 'a1b2c3d', pull_request_url: 'github.com/acme/app/pull/42', workflow_status: 'completed' }),
+    S('END', 'Completed', 'The dashboard shows the PR link, the commit and the full execution summary.', [['s', 'workflow completed']], {}),
+  ];
+  const SCENARIOS = {
+    happy: { name: 'Happy path (full-stack)', steps: [...COMMON_HEAD, testPass(1), reviewOk, ...TAIL_OK] },
+    testfix: { name: 'Tests fail → fix → pass', steps: [...COMMON_HEAD,
+      S('testing', 'QA - round 1', 'pytest fails. The failure analysis assigns it to the backend developer and the retry counter increments.', [['w', 'qa_engineer: 1 of 4 commands failed: test_filter_rejects_unknown_status'], ['w', 'task_orchestrator: tests failed; routing feedback to backend (retry 1/3)']], { workflow_status: 'tests_failed', retry_count: 1, fix_feedback: '{backend: [failure output…]}', active_agents: '[backend]', test_results: '{status: failed}' }),
+      S('backend_development', 'Backend correction', 'Only the responsible agent runs, with the failing output in its prompt.', [['', 'backend_developer: correction round 1 - return 422 for unknown status']], { workflow_status: 'tests_failed' }, { edge: 'testing>backend_development' }),
+      S('development_join', 'Integrate changes', 'The diff is recomputed.', [['', 'task_orchestrator: integrated 5 changed files']], { fix_feedback: '{}' }),
+      S('execution_approval', 'Gate skipped', 'Execution was already approved for this workflow, so it is not asked again.', [['', 'execution approval already granted']], {}),
+      testPass(2), reviewOk, ...TAIL_OK] },
+    review: { name: 'Review rejects (hardcoded secret)', steps: [...COMMON_HEAD, testPass(1),
+      S('code_review', 'Code review - rejected', 'Secret scanning finds a token. The critical finding blocks approval even though the LLM said LGTM.', [['e', 'code_reviewer: [critical/secret] app/config.py:3 possible GitHub token'], ['w', 'task_orchestrator: review rejected; routing feedback to backend (retry 1/3)']], { workflow_status: 'review_failed', retry_count: 1, review_feedback: '{approved: false}' }),
+      S('backend_development', 'Backend fixes review findings', 'The finding and its suggestion go into the developer prompt.', [['', 'backend_developer: read token from environment variable']], {}, { edge: 'code_review>backend_development' }),
+      S('development_join', 'Integrate changes', '', [['', 'integrated 5 changed files']], {}),
+      S('execution_approval', 'Gate skipped', 'Already approved.', [], {}),
+      testPass(2), reviewOk, ...TAIL_OK] },
+    maxretry: { name: 'Max retries reached', steps: [...COMMON_HEAD.slice(0, 4), COMMON_HEAD[4], COMMON_HEAD[5], COMMON_HEAD[6], COMMON_HEAD[7],
+      S('testing', 'QA - round 1', 'Failure, retry 1/1 (max_retries = 1 in this scenario).', [['w', 'tests failed; routing feedback to backend (retry 1/1)']], { workflow_status: 'tests_failed', retry_count: 1, max_retries: 1 }),
+      S('backend_development', 'Backend correction', '', [['', 'backend_developer: correction round 1']], {}, { edge: 'testing>backend_development' }),
+      S('development_join', 'Integrate changes', '', [], {}),
+      S('execution_approval', 'Gate skipped', '', [], {}),
+      S('testing', 'QA - round 2', 'Still failing. retry_count (2) > max_retries (1), so the graph routes to max_retries_exceeded.', [['e', 'qa_engineer: 1 of 4 commands failed']], { retry_count: 2, workflow_status: 'tests_failed' }),
+      S('max_retries_exceeded', 'Retry limit reached', 'Tasks are marked failed and error_details explains why. Nothing is pushed.', [['e', 'Maximum retries (1) reached; tests still failing.']], { workflow_status: 'failed', error_details: '{message: "Maximum retries…"}' }),
+      S('END', 'Failed', 'The dashboard shows the failure with the full test output.', [['e', 'workflow failed']], {}, { failed: true })] },
+    reject: { name: 'User rejects release', steps: [...COMMON_HEAD, testPass(1), reviewOk,
+      S('release_approval', 'Approval gate: release', 'The user clicks Reject. The node returns workflow_status = cancelled.', [['h', '👤 waiting for approval: push + pull request'], ['w', '👤 release rejected by user']], { workflow_status: 'cancelled' }),
+      S('END', 'Cancelled', 'Nothing was pushed and no PR was created. The workspace is cleaned up.', [['w', 'workflow cancelled']], {}, { edge: 'release_approval>END', failed: true })] },
+  };
+  const sel = $('scenario');
+  sel.innerHTML = Object.entries(SCENARIOS).map(([k, s]) => `<option value="${k}">${s.name}</option>`).join('');
+  let step = -1, timer = null;
+  const steps = () => SCENARIOS[sel.value].steps;
+  function render() {
+    const list = steps();
+    Object.values(nodeEls).forEach((g) => g.classList.remove('current', 'visited', 'failed'));
+    Object.values(edgeEls).flat().forEach((p) => p.classList.remove('active'));
+    const state = { ...BASE_STATE };
+    const changed = new Set();
+    const logs = [];
+    nodeEls.START.classList.add(step >= 0 ? 'visited' : 'current');
+    for (let i = 0; i <= step; i++) {
+      const s = list[i];
+      if (i === step) changed.clear();
+      Object.entries(s.state).forEach(([k, v]) => { state[k] = v; if (i === step) changed.add(k); });
+      s.logs.forEach((l) => logs.push(l));
+      nodeEls[s.node].classList.add('visited');
+    }
+    if (step >= 0) {
+      const s = list[step];
+      nodeEls[s.node].classList.remove('visited');
+      nodeEls[s.node].classList.add(s.failed ? 'failed' : 'current');
+      const prev = step === 0 ? 'START' : list[step - 1].node;
+      const key = s.edge || (prev + '>' + s.node);
+      (edgeEls[key] || []).forEach((p) => p.classList.add('active'));
+      $('stepTitle').textContent = s.title;
+      $('stepDesc').textContent = s.desc || '';
+    } else {
+      $('stepTitle').textContent = 'Ready';
+      $('stepDesc').innerHTML = 'Choose a scenario and press <em>Step</em>.';
+    }
+    $('stepCount').textContent = `${Math.max(step + 1, 0)} / ${list.length}`;
+    $('stepProgress').style.width = `${((step + 1) / list.length) * 100}%`;
+    $('stateView').innerHTML = Object.entries(state).map(([k, v]) => `<div class="${changed.has(k) ? 'chg' : ''}"><b>${k}</b><span>${esc(v)}</span></div>`).join('');
+    const log = $('stepLog');
+    log.innerHTML = logs.length ? logs.map(([c, t]) => `<div class="${c}">${esc(t)}</div>`).join('') : '<div>logs appear here…</div>';
+    log.scrollTop = log.scrollHeight;
+    $('prevBtn').disabled = step < 0;
+    $('nextBtn').disabled = step >= list.length - 1;
+  }
+  function stop() { clearInterval(timer); timer = null; $('playBtn').textContent = '▶ Play'; }
+  $('nextBtn').addEventListener('click', () => { if (step < steps().length - 1) { step++; render(); } });
+  $('prevBtn').addEventListener('click', () => { if (step >= 0) { step--; render(); } });
+  $('resetBtn').addEventListener('click', () => { stop(); step = -1; render(); });
+  $('playBtn').addEventListener('click', () => {
+    if (timer) return stop();
+    if (step >= steps().length - 1) step = -1;
+    $('playBtn').textContent = '❚❚ Pause';
+    timer = setInterval(() => { if (step >= steps().length - 1) return stop(); step++; render(); }, 1300);
+  });
+  sel.addEventListener('change', () => { stop(); step = -1; render(); });
+  render();
+
+  /* ---------- state table ---------- */
+  const STATE_FIELDS = [
+    ['project_id / workflow_id / user_id', 'runner (initial state)', 'Identity; the thread_id of the checkpoint is the workflow_id'],
+    ['repository_url', 'runner', 'Clone URL from the connected repository'],
+    ['repository_path', 'repository_analysis', 'Absolute path of the isolated workspace'],
+    ['base_branch', 'runner', 'Selected by the user'],
+    ['feature_branch', 'task_planning, github_release', 'devflow/<slug>-<workflow id>; a suffix is added if it already exists'],
+    ['user_requirement', 'runner', 'Original text'],
+    ['acceptance_criteria', 'requirement_analysis', 'Used by developers, the reviewer and the PR body'],
+    ['repository_analysis', 'repository_analysis', 'Components, commands, relevant files, conventions'],
+    ['architecture_plan', 'architecture_design', 'Approach, endpoints, models, file plan'],
+    ['development_tasks', 'task_planning, developers, testing, review', 'Reducer merge_tasks: merged by id (parallel-safe); task_planning can replace the list'],
+    ['generated_files / modified_files', 'developers, development_join', 'Reducer merge_unique'],
+    ['file_ownership', 'developers', 'Reducer merge_dict: path → agent; stops one agent from clobbering another'],
+    ['test_results', 'testing', 'TestReport: status passed | failed | not_run | error'],
+    ['review_feedback', 'code_review', 'ReviewReport including diff_hash'],
+    ['fix_feedback / active_agents', 'testing, code_review, task_planning', 'Which developers run next and what they must fix'],
+    ['workflow_status', 'every node', 'Reducer merge_status: failed, cancelled and completed are sticky'],
+    ['retry_count / max_retries', 'testing, code_review', 'Shared correction counter'],
+    ['execution_approved / release_approved', 'approval gates', 'Execution approval is asked for once per workflow'],
+    ['approved_diff_hash', 'code_review', 'SHA-256 of the approved diff; release refuses on mismatch'],
+    ['commit_id / pull_request_url', 'github_release', 'Final results'],
+    ['error_details', 'any failing node', 'Reducer keep_last; shown in the dashboard'],
+  ];
+  function renderState(f = '') {
+    const q = f.toLowerCase();
+    $('stateTable').innerHTML = STATE_FIELDS.filter((r) => r.join(' ').toLowerCase().includes(q)).map(([a, b, c]) => `<tr><td><code>${esc(a)}</code></td><td class="small">${esc(b)}</td><td class="small">${esc(c)}</td></tr>`).join('');
+  }
+  $('stateFilter').addEventListener('input', (e) => renderState(e.target.value)); renderState();
+
+  /* ---------- routing playground (port of routing.py) ---------- */
+  const STATUSES = { testing: ['running', 'tests_failed', 'failed', 'cancelled'], code_review: ['running', 'review_failed', 'failed', 'cancelled'] };
+  function fillStatuses() { $('rStatus').innerHTML = STATUSES[$('rNode').value].map((s) => `<option>${s}</option>`).join(''); $('rStatus').value = $('rNode').value === 'testing' ? 'tests_failed' : 'review_failed'; }
+  function route() {
+    const node = $('rNode').value, status = $('rStatus').value, retry = Number($('rRetry').value), max = Number($('rMax').value);
+    const roles = [$('rBe').checked && 'backend', $('rFe').checked && 'frontend'].filter(Boolean);
+    let out, why, cls = 'info';
+    if (status === 'cancelled' || status === 'failed') { out = 'END'; why = status === 'cancelled' ? 'workflow cancellation' : 'unrecoverable error (for example, sandbox unavailable)'; cls = 'bad'; }
+    else if (status === 'running') { out = node === 'testing' ? 'code_review' : 'release_approval'; why = node === 'testing' ? 'successful tests (or explicitly not_run)' : 'successful review'; cls = 'ok'; }
+    else if (retry > max) { out = 'max_retries_exceeded'; why = `retry_count ${retry} > max_retries ${max}`; cls = 'bad'; }
+    else if (!roles.length) { out = 'END'; why = 'no responsible development agent'; cls = 'bad'; }
+    else { out = roles.map((r) => r + '_development').join(' + '); why = `${node === 'testing' ? 'failed tests' : 'failed review'}: run ${roles.length > 1 ? 'in parallel' : ''} with fix_feedback (correction round ${retry})`; }
+    $('rResult').className = 'result ' + cls;
+    $('rResult').innerHTML = `next → <code>${esc(out)}</code><div class="small" style="font-weight:400">${esc(why)}</div>`;
+  }
+  ['rNode', 'rStatus', 'rRetry', 'rMax', 'rFe', 'rBe'].forEach((id) => $(id).addEventListener('input', () => { if (id === 'rNode') fillStatuses(); route(); }));
+  fillStatuses(); route();
+
+  /* ---------- security ---------- */
+  const SEC = [
+    ['Secrets never reach the LLM, the browser or the checkpoints', 'GitHub and LLM keys are Fernet-encrypted in the DB and never returned by the API. They are absent from ProjectState and therefore from the checkpoints. Every prompt passes through <code>redact_secrets()</code>. Credential files (<code>.env*</code>, <code>*.pem</code>, <code>id_rsa*</code>, <code>.npmrc</code> …) are neither read nor written.'],
+    ['Git authentication without leaking the token', 'The token is passed as <code>GIT_CONFIG_COUNT/KEY/VALUE</code> environment variables (an <code>http.extraheader</code> with basic auth), so it appears in neither argv (<code>ps</code>) nor <code>.git/config</code>. Any token echoed in git errors is scrubbed.'],
+    ['Developer agents cannot blindly overwrite files', 'An existing file can be modified only if its current content was in the prompt. A change is rejected when it removes more than 70% of a file of 40+ lines, contains placeholder text such as "...rest of the code", is empty, touches a file owned by the other agent, or targets vendor/build directories or <code>.git</code>.'],
+    ['Independent review', 'The reviewer sees only the diff, has its own prompt and can use its own model. Critical and high automated findings (secrets, large deletions, failing tests) block approval regardless of the LLM. A human approves the release too.'],
+    ['Release integrity', 'The SHA-256 of the reviewed diff must match the workspace at release time. Only approved files are staged. Protected branches (<code>main</code>, <code>master</code>, <code>release/*</code> …) and the base branch are refused. PRs are never merged.'],
+    ['Least privilege on GitHub', 'A fine-grained PAT with Contents (read/write), Pull requests (read/write) and Metadata (read) on selected repositories is enough.'],
+    ['Auth & ownership', 'PBKDF2-SHA256 password hashing and HS256 JWTs. Every project, workflow and PR query is scoped to the current user, and other users’ resources return 404.'],
+  ];
+  $('secList').innerHTML = SEC.map(([t, d], i) => `<details ${i === 0 ? 'open' : ''}><summary>${t}</summary><div class="small">${d}</div></details>`).join('');
+  const SENSITIVE = [/^\.env$/, /^\.env\..*/, /\.pem$/, /\.key$/, /^id_rsa/, /^id_ed25519/, /\.p12$/, /\.pfx$/, /\.keystore$/, /\.jks$/, /^\.npmrc$/, /^\.pypirc$/, /^\.netrc$/, /^credentials(\..*)?$/, /^secrets\..*/];
+  const ALLOW = ['.env.example', '.env.sample', '.env.template'];
+  const IGNORED = ['.git', 'node_modules', '.venv', 'venv', '__pycache__', 'dist', 'build', '.next', 'coverage', 'target', 'vendor'];
+  function checkPath() {
+    let p = $('pathIn').value.trim().replace(/\\/g, '/');
+    while (p.startsWith('./')) p = p.slice(2);
+    const parts = p.split('/').filter(Boolean);
+    const name = parts[parts.length - 1] || '';
+    let verdict = null;
+    if (!p || p.startsWith('/') || /^[A-Za-z]:/.test(p)) verdict = 'Rejected: the path must be relative to the repository.';
+    else if (parts.includes('..')) verdict = 'Rejected: path traversal (..) is not allowed.';
+    else if (parts[0] === '.git') verdict = 'Rejected: access to .git is not allowed.';
+    else if (!ALLOW.includes(name) && SENSITIVE.some((r) => r.test(name))) verdict = 'Rejected: credential-like file is blocked.';
+    else if (parts.slice(0, -1).some((d) => IGNORED.includes(d))) verdict = 'Rejected: writing into a generated or vendor directory is not allowed.';
+    else if ($('pathExists').checked && !$('pathSeen').checked) verdict = 'Rejected: refusing to overwrite an existing file whose content the agent was not shown.';
+    const r = $('pathResult');
+    r.className = 'result ' + (verdict ? 'bad' : 'ok');
+    r.textContent = verdict || `Allowed: ${$('pathExists').checked ? 'modify' : 'create'} ${parts.join('/')} (further checks: placeholder text, truncation, ownership, size limit).`;
+  }
+  ['pathIn', 'pathSeen', 'pathExists'].forEach((id) => $(id).addEventListener('input', checkPath)); checkPath();
+
+  /* ---------- sandbox ---------- */
+  const FLAGS = [
+    ['docker run --rm', 'A throwaway container, removed after each command.'],
+    ['--network=none', 'No network for tests, lint and build. Install can use bridge networking only when the user enables it in Settings.'],
+    ['--cpus=1.0', 'CPU limit (SANDBOX_CPUS).'],
+    ['--memory=1g --memory-swap=1g', 'Memory limit without extra swap (SANDBOX_MEMORY).'],
+    ['--pids-limit=512', 'Prevents fork bombs.'],
+    ['--cap-drop=ALL', 'Drops every Linux capability; the effective capability set is empty (verified by a test).'],
+    ['--security-opt=no-new-privileges', 'Blocks privilege escalation through setuid binaries.'],
+    ['--env=CI=true', 'Test runners such as vitest and jest run once instead of in watch mode.'],
+    ['-w /workspace/<component>', 'Runs in the component directory, for example frontend/.'],
+    ['devflow-sandbox:<run-id>', 'Temporary image snapshotted after install, holding a COPY of the workspace (no bind mount).'],
+    ['sh -c "python -m pytest -q"', 'The detected command. It is killed after SANDBOX_COMMAND_TIMEOUT_SECONDS.'],
+  ];
+  $('dockerCmd').innerHTML = FLAGS.map(([f], i) => `<span class="flag" tabindex="0" role="button" data-i="${i}" style="cursor:pointer;border-bottom:1px dashed currentColor">${esc(f)}</span>`).join(' \\\n  ');
+  const showFlag = (i) => { $('flagInfo').innerHTML = `<code>${esc(FLAGS[i][0])}</code> - ${esc(FLAGS[i][1])}`; };
+  $('dockerCmd').addEventListener('mouseover', (e) => { const f = e.target.closest('.flag'); if (f) showFlag(f.dataset.i); });
+  $('dockerCmd').addEventListener('click', (e) => { const f = e.target.closest('.flag'); if (f) showFlag(f.dataset.i); });
+  $('dockerCmd').addEventListener('keydown', (e) => { const f = e.target.closest('.flag'); if (f && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); showFlag(f.dataset.i); } });
+
+  /* ---------- API ---------- */
+  const API = [
+    ['POST', '/api/auth/register', 'Create an account'], ['POST', '/api/auth/login', 'Get a JWT'], ['GET', '/api/auth/me', 'Current user'],
+    ['POST', '/api/projects', 'Create a project (repository + base branch)'], ['GET', '/api/projects', 'List projects'], ['GET', '/api/projects/{id}', 'Project detail'],
+    ['POST', '/api/repositories/connect', 'Verify access to owner/name and register it'], ['GET', '/api/repositories', 'Connected repositories'],
+    ['GET', '/api/github/status', 'GitHub connection status (never the token)'], ['POST', '/api/github/connect', 'Validate and store an encrypted token'], ['DELETE', '/api/github/connect', 'Disconnect'],
+    ['GET', '/api/github/repos', 'List repositories from GitHub'], ['GET', '/api/github/repos/{owner}/{repo}/branches', 'Branches with protection status'],
+    ['GET', '/api/github/pull-requests', 'PRs created by DevFlow AI'], ['GET', '/api/github/pull-requests/{id}/status', 'Refresh PR state from GitHub'],
+    ['POST', '/api/workflows/start', 'Start a workflow (202 Accepted)'], ['GET', '/api/workflows', 'History (filter by project/status)'], ['GET', '/api/workflows/{id}', 'Detail: agents, tasks, approvals, analysis'],
+    ['POST', '/api/workflows/{id}/cancel', 'Request cancellation'], ['POST', '/api/workflows/{id}/approve', 'Approve or reject the pending gate'],
+    ['GET', '/api/workflows/{id}/logs', 'Logs (after_id for incremental reads)'], ['GET', '/api/workflows/{id}/results', 'Diffs, test runs, reviews, PR'], ['GET', '/api/workflows/{id}/events', 'Server-Sent Events stream (?token=)'],
+    ['GET', '/api/settings', 'LLM and workflow settings'], ['PUT', '/api/settings', 'Update settings (API key is write-only)'], ['POST', '/api/settings/test-llm', 'Check provider connectivity and model'],
+    ['GET', '/api/dashboard/stats', 'Counters and recent PRs'], ['GET', '/health', 'DB, sandbox and Ollama health'],
+  ];
+  function renderApi(f = '') {
+    const q = f.toLowerCase();
+    $('apiTable').innerHTML = API.filter((r) => r.join(' ').toLowerCase().includes(q)).map(([m, p, d]) => `<tr><td><span class="tag ${m}">${m}</span></td><td><code>${esc(p)}</code></td><td class="small">${esc(d)}</td></tr>`).join('');
+  }
+  $('apiFilter').addEventListener('input', (e) => renderApi(e.target.value)); renderApi();
+
+  /* ---------- setup ---------- */
+  const SETUP = {
+    'Docker Compose': [
+      ['Configure', 'cp .env.example .env\n# set SECRET_KEY and DOCKER_GID (stat -c %g /var/run/docker.sock)'],
+      ['Start the stack (also pulls the Ollama model)', 'docker compose up -d --build'],
+      ['Follow the model download', 'docker compose logs -f ollama-pull'],
+      ['Open', '# dashboard  http://localhost:3000\n# API docs   http://localhost:8000/docs\n# health     http://localhost:8000/health'],
+    ],
+    'Local development': [
+      ['Ollama', 'ollama serve\nollama pull llama3.1:8b'],
+      ['PostgreSQL', 'docker compose up -d postgres'],
+      ['Backend', 'cd backend\npython -m venv .venv && source .venv/bin/activate\npip install -r requirements-dev.txt\nalembic upgrade head\nuvicorn app.main:app --reload --port 8000'],
+      ['Frontend', 'cd frontend\nnpm install\nnpm run dev   # http://localhost:5173'],
+    ],
+    'Tests': [
+      ['Backend', 'cd backend && pytest'],
+      ['Backend on PostgreSQL', 'TEST_POSTGRES_URL=postgresql+psycopg://devflow:devflow@localhost:5432/devflow_test pytest'],
+      ['Frontend', 'cd frontend && npm test && npm run lint && npm run build'],
+    ],
+  };
+  const tabsEl = $('setupTabs');
+  tabsEl.innerHTML = Object.keys(SETUP).map((k, i) => `<button type="button" role="tab" aria-selected="${i === 0}">${k}</button>`).join('');
+  function showSetup(name) {
+    tabsEl.querySelectorAll('button').forEach((b) => b.setAttribute('aria-selected', b.textContent === name));
+    $('setupBody').innerHTML = SETUP[name].map(([t, c]) => `<div class="small muted" style="margin:6px 0 4px">${t}</div><div class="cmd"><pre><code>${esc(c)}</code></pre><button type="button" class="copy">Copy</button></div>`).join('');
+  }
+  tabsEl.addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) showSetup(b.textContent); });
+  document.addEventListener('click', async (e) => {
+    const b = e.target.closest('.copy'); if (!b) return;
+    const text = b.previousElementSibling.textContent.split('\n').filter((l) => !l.trim().startsWith('#')).join('\n');
+    try { await navigator.clipboard.writeText(text); b.textContent = 'Copied'; } catch (err) { b.textContent = 'Select & copy'; }
+    setTimeout(() => { b.textContent = 'Copy'; }, 1500);
+  });
+  showSetup('Docker Compose');
+  const ENV = [
+    ['SECRET_KEY', '(required)', 'JWT signing and key derivation for encrypted secrets'], ['DATABASE_URL', 'postgresql+psycopg://…/devflow', 'Database; SQLite is also supported'],
+    ['LLM_PROVIDER / LLM_MODEL', 'ollama / llama3.1:8b', 'Defaults for new users (editable in Settings)'], ['OLLAMA_BASE_URL', 'http://localhost:11434', 'Ollama endpoint'],
+    ['OPENAI_API_KEY / MISTRAL_API_KEY', '—', 'Optional server-wide keys'], ['GITHUB_TOKEN', '—', 'Optional server-wide fallback token'],
+    ['PROTECTED_BRANCH_PATTERNS', 'main,master,develop,production,release/*', 'Branches the release agent never pushes to'],
+    ['SANDBOX_ALLOW_NETWORK_FOR_INSTALL', 'false', 'Network during dependency install only'], ['SANDBOX_CPUS / SANDBOX_MEMORY', '1.0 / 1g', 'Sandbox limits'],
+    ['WORKFLOW_MAX_RETRIES', '3', 'Correction rounds before failing'], ['REQUIRE_EXECUTION_APPROVAL / REQUIRE_RELEASE_APPROVAL', 'true', 'Human gates'],
+    ['AGENT_TIMEOUT_SECONDS', '900', 'Hard timeout per agent'], ['CHECKPOINT_BACKEND', 'auto', 'postgres | sqlite | memory'],
+  ];
+  $('envTable').innerHTML = ENV.map(([a, b, c]) => `<tr><td><code>${esc(a)}</code></td><td class="small"><code>${esc(b)}</code></td><td class="small">${esc(c)}</td></tr>`).join('');
+
+  /* ---------- quiz ---------- */
+  const QUIZ = [
+    ['The QA agent finds no test command for the changed component. What is reported?', ['passed - nothing failed', 'not_run - the change is explicitly unverified', 'The workflow crashes'], 1, 'A run is "passed" only if at least one test command executed and everything exited 0. Missing tests produce not_run, which is shown to the reviewer and at the release gate.'],
+    ['Tests fail for the second time with max_retries = 3. Where does the graph go?', ['max_retries_exceeded', 'Back to the responsible developer(s)', 'code_review'], 1, 'retry_count becomes 2, and 2 is not greater than 3, so the failure is routed back to the responsible developer with the failing output as feedback.'],
+    ['The LLM reviewer approves, but the diff contains ghp_… (a GitHub token). Result?', ['Approved, because the LLM decides', 'Rejected, because the critical automated finding blocks approval', 'The secret is removed silently'], 1, 'Approval is a policy decision in code: automated critical and high findings block approval regardless of the LLM verdict, and the feedback goes to the developer.'],
+    ['The API process restarts while QA is running. What happens on the next startup?', ['The workflow is lost', 'It restarts from requirement analysis', 'It resumes from the last checkpoint'], 2, 'resume_interrupted() finds running workflows and invokes the graph with None, continuing from the last completed super-step (verified by a test).'],
+    ['Where is the GitHub token during a workflow?', ['In ProjectState so all agents can use it', 'Encrypted in the DB; decrypted only in GitHubService and git env vars', 'In the LLM prompt for the release agent'], 1, 'Secrets are never in state, checkpoints or prompts. The runtime fetches the token when needed and passes it to git through environment variables.'],
+    ['Someone edits a file after the review approved the diff. What does the release agent do?', ['Commits anyway', 'Refuses: the diff hash no longer matches', 'Re-runs the review itself'], 1, 'The approved diff is fingerprinted with SHA-256. On a mismatch the release agent refuses, so only reviewed code can be released.'],
+  ];
+  let score = 0, answered = 0;
+  $('quizBox').innerHTML = QUIZ.map(([q, opts, , why], i) => `<div class="quiz-q card" data-q="${i}"><strong>${i + 1}. ${esc(q)}</strong>${opts.map((o, j) => `<label><input type="radio" name="q${i}" value="${j}"> ${esc(o)}</label>`).join('')}<div class="why">${esc(why)}</div></div>`).join('');
+  $('quizBox').addEventListener('change', (e) => {
+    const box = e.target.closest('.quiz-q'); if (!box || box.classList.contains('answered')) return;
+    const i = Number(box.dataset.q), pick = Number(e.target.value), right = QUIZ[i][2];
+    box.classList.add('answered');
+    box.querySelectorAll('label').forEach((l, j) => { if (j === right) l.classList.add('right'); else if (j === pick) l.classList.add('wrong'); l.querySelector('input').disabled = true; });
+    answered++; if (pick === right) score++;
+    $('quizScore').textContent = `Score: ${score} / ${answered}${answered === QUIZ.length ? ' - all done!' : ''}`;
+  });
+})();
+</script>
+</body>
+</html>
