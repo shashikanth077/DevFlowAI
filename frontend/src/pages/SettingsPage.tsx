@@ -15,6 +15,7 @@ import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
 import { useEffect, useState } from 'react';
 import ErrorAlert from '../components/ErrorAlert';
+import IntegrationsCard from '../features/settings/IntegrationsCard';
 import LoadingState from '../components/LoadingState';
 import { useAsync } from '../hooks/useAsync';
 import { api, errorMessage } from '../services/api';
@@ -66,6 +67,8 @@ export default function SettingsPage() {
         require_release_approval: form.require_release_approval,
         sandbox_allow_network_for_install: form.sandbox_allow_network_for_install,
         create_draft_pull_requests: form.create_draft_pull_requests,
+        mcp_enabled: form.mcp_enabled,
+        mcp_disabled_servers: form.mcp_disabled_servers,
       };
       if (apiKey) body.llm_api_key = apiKey;
       const saved = await api.updateSettings(body);
@@ -252,6 +255,8 @@ export default function SettingsPage() {
           </Stack>
         </CardContent>
       </Card>
+
+      <IntegrationsCard form={form} onChange={(patch) => setForm({ ...form, ...patch })} />
 
       <Stack direction="row" sx={{ justifyContent: 'flex-end' }}>
         <Button variant="contained" size="large" onClick={save} disabled={saving}>

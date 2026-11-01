@@ -37,15 +37,16 @@ A human approves each step that has side effects.
 1. [What is implemented](#what-is-implemented)
 2. [Architecture](#architecture)
 3. [Agents and the LangGraph workflow](#agents-and-the-langgraph-workflow)
-4. [Project structure](#project-structure)
-5. [Quick start (Docker Compose)](#quick-start-docker-compose)
-6. [Local development](#local-development)
-7. [Configuration](#configuration)
-8. [Using DevFlow AI](#using-devflow-ai)
-9. [Security model](#security-model)
-10. [REST API](#rest-api)
-11. [Testing](#testing)
-12. [Limitations and planned work](#limitations-and-planned-work)
+4. [LangSmith observability and MCP tools](#langsmith-observability-and-mcp-tools)
+5. [Project structure](#project-structure)
+6. [Quick start (Docker Compose)](#quick-start-docker-compose)
+7. [Local development](#local-development)
+8. [Configuration](#configuration)
+9. [Using DevFlow AI](#using-devflow-ai)
+10. [Security model](#security-model)
+11. [REST API](#rest-api)
+12. [Testing](#testing)
+13. [Limitations and planned work](#limitations-and-planned-work)
 
 ---
 
@@ -64,13 +65,13 @@ All six development phases from the specification are implemented and covered by
 
 **How it was verified**
 
-- **Backend: 64 pytest tests.** These cover the security helpers, the LLM service (Ollama and OpenAI-compatible
+- **Backend: 96 pytest tests.** These cover the security helpers, the LLM service (Ollama and OpenAI-compatible
   wire formats, validation retries, redaction), repository inspection and path-safety guards, every agent,
   routing and reducers, the REST API, Docker sandbox isolation, and complete **end-to-end LangGraph runs
   through the REST API**. The end-to-end runs include a test failure followed by a correction loop, a review
   rejection, the max-retry limit, cancellation, rejected approvals, **crash recovery from a checkpoint**, and
   a run where **pytest really executes inside the Docker sandbox**. The suite passes on SQLite and on PostgreSQL.
-- **Frontend: 15 Vitest + React Testing Library tests**, a clean `tsc` type-check and a production build.
+- **Frontend: 23 Vitest + React Testing Library tests**, a clean `tsc` type-check and a production build.
 - In tests the LLM is a scripted test double, and so is the GitHub REST API (an httpx mock transport). Git
   clone, commit and push run for real against a local bare repository.
 
@@ -143,6 +144,73 @@ completed stages are not re-run. `test_checkpoint_recovery_after_crash` covers t
 `AgentExecution`, enforces `AGENT_TIMEOUT_SECONDS`, and converts any exception into
 `workflow_status=failed` with `error_details`, which the dashboard shows. Failures are never silently ignored.
 
+## LangSmith observability and MCP tools
+
+### LangSmith tracing
+
+Set `LANGSMITH_TRACING=true` and `LANGSMITH_API_KEY` (standard names; `LANGCHAIN_*` aliases also work) and every
+workflow becomes a trace in the `LANGSMITH_PROJECT` project (default `devflow-ai`):
+
+```
+devflow-workflow                       root run (one per execution segment; all share thread_id = workflow id)
+ ├─ requirement_analysis               LangGraph node
+ │   └─ llm:requirement_analyst        LLM call: model, temperature, input/output tokens, latency, retries
+ ├─ architecture_design
+ │   ├─ mcp:devflow-repo.read_file     MCP tool call (run_type=tool)
+ │   └─ llm:architect
+ ├─ backend_development / frontend_development / testing / code_review / github_release ...
+```
+
+- **Segments:** a workflow pauses at each approval gate, so a run produces one root run per segment
+  (`devflow-workflow`, then `devflow-workflow-resume`). The ids are stored on the workflow, shown on the
+  **Tools & traces** tab and returned by `GET /api/workflows/{id}/trace`.
+- **Feedback:** human approvals (`human_approval_execution` / `human_approval_release`), `tests_passed`,
+  `review_approved`, `workflow_completed` and `retries_used` are attached to the trace, so LangSmith can
+  filter and chart workflow quality.
+- **Privacy:** prompts contain your source code, so every trace goes through one explicit client with a
+  redaction hook: credentials are scrubbed and very long fields truncated. `LANGSMITH_HIDE_CONTENT=true` sends
+  only the structure (counts, ids, metadata) and no prompts, code or outputs. The library's global env tracing
+  is switched off at startup, so a stray `LANGSMITH_TRACING` can never create an unredacted duplicate.
+- **Never fatal:** tracing failures are logged and never fail a workflow. The dashboard's Settings page has a
+  **Test LangSmith connection** button.
+
+### MCP (Model Context Protocol) tools
+
+MCP is used in **both directions**.
+
+**1. Agents use MCP tools (DevFlow is an MCP client).** When enabled, the architect, developers, reviewer and
+requirement analyst run a short tool loop before they answer: the model picks a tool (or finishes), the broker
+runs it, and the result is added to the prompt. This uses the same schema-validated JSON path as every other
+agent output, so it works identically with Ollama, OpenAI and Mistral and needs no provider-specific tool-calling.
+
+- **Built-in `devflow-repo` server** (`app/mcp_tools/repo_server.py`): `list_directory`, `read_file`,
+  `search_code`, `git_log`, `git_status`, `git_diff`. It lets agents explore a repository on demand instead of
+  having whole files stuffed into prompts. It reuses the workspace guards (no traversal, no `.git`, no credential
+  files) and never modifies the repository or its index.
+- **Your own servers:** list them in a JSON file and set `MCP_SERVERS_FILE` ([example](docs/mcp_servers.example.json);
+  both the `{"servers": [...]}` and the Claude-style `{"mcpServers": {...}}` layouts are accepted). Transports:
+  stdio and streamable HTTP. Use it for documentation lookup, an issue tracker, a security-advisory feed, etc.
+- **Policy** (`app/mcp_tools/broker.py`): a tool is callable only if it advertises `readOnlyHint` (or the
+  operator allow-lists it); destructive and unannotated tools are blocked and the attempt is audited. Servers are
+  scoped to the agents named in their config. There is a per-agent call limit (`MCP_MAX_TOOL_CALLS`), a
+  per-workflow budget, argument validation against the tool's JSON schema, timeouts, and secret redaction and
+  truncation of results.
+- **Prompt injection:** tool output is treated as untrusted data. It is wrapped in delimiters and labelled, the
+  model is instructed never to follow instructions inside it, and it cannot change tools or policy. A tool result
+  cannot trigger writes anywhere, because only read-only tools are reachable at all.
+- **Trust boundary:** a stdio entry is a command that runs on the backend host, so servers come only from the
+  operator's file, never from the API or browser. Users opt in (Settings → *Let agents call MCP tools*) and
+  can switch individual servers off. Server child processes receive a minimal environment, not DevFlow's secrets.
+- **Audit:** every call (allowed, blocked or failed) is stored in `tool_calls`, shown on the workflow's
+  **Tools & traces** tab and traced in LangSmith.
+
+**2. DevFlow is an MCP server** (`python -m app.mcp_tools.devflow_server`). It lets MCP clients such as Claude Code
+or Claude Desktop drive DevFlow: `list_projects`, `start_workflow`, `list_workflows`, `get_workflow`,
+`get_workflow_logs`, `get_workflow_results`, `cancel_workflow`. There is **deliberately no approve tool**: the
+sandbox-execution and push/PR gates stay human-only, so an AI client cannot approve its own work. Configuration
+example: [`docs/claude-code-mcp.example.json`](docs/claude-code-mcp.example.json). It authenticates with a DevFlow
+access token (`DEVFLOW_API_TOKEN`) and sees only that user's data.
+
 ## Project structure
 
 ```
@@ -153,6 +221,8 @@ backend/
     api/routes/                 auth, projects, repositories, github, workflows (+SSE), settings, dashboard
     agents/                     the 9 agents (+ base.py, development.py shared by FE/BE developers)
     orchestration/              state.py, graph.py, nodes.py, routing.py, checkpointing.py, runtime.py
+    observability/              tracing.py - LangSmith client, redaction, feedback
+    mcp_tools/                  MCP client (config, connection, broker, loop) + repo_server + devflow_server
     services/                   llm_service, github_service, repository_service, execution_service,
                                 workflow_service (runner/persistence/approvals), settings_service
     schemas/                    Pydantic models for API and for every agent's structured output
@@ -160,7 +230,7 @@ backend/
     database/                   engine + session management
     core/                       config, security (JWT, PBKDF2, Fernet, secret scanning), logging, errors
   alembic/                      migrations (0001_initial_schema)
-  tests/                        64 tests (unit, API, end-to-end graph, Docker sandbox)
+  tests/                        96 tests (unit, API, end-to-end graph, MCP, tracing, Docker sandbox)
   Dockerfile  requirements.txt  requirements-dev.txt
 frontend/
   src/
@@ -298,6 +368,11 @@ All settings are environment variables; see [`.env.example`](.env.example) for t
 | `WORKFLOW_MAX_RETRIES` | `3` | Correction rounds before the workflow fails |
 | `REQUIRE_EXECUTION_APPROVAL` / `REQUIRE_RELEASE_APPROVAL` | `true` | Human approval gates |
 | `AGENT_TIMEOUT_SECONDS` | `900` | Hard timeout per agent |
+| `LANGSMITH_TRACING` / `LANGSMITH_API_KEY` / `LANGSMITH_PROJECT` | `false` / – / `devflow-ai` | LangSmith tracing |
+| `LANGSMITH_HIDE_CONTENT` | `false` | Send only metadata; never prompts, code or outputs |
+| `MCP_ENABLED` / `MCP_BUILTIN_REPO_SERVER` | `true` / `true` | Server-wide MCP switch; built-in repository tools |
+| `MCP_SERVERS_FILE` | – | Operator-approved extra MCP servers (JSON) |
+| `MCP_MAX_TOOL_CALLS` / `MCP_TOOL_TIMEOUT_SECONDS` | `6` / `60` | Tool-use limits per agent run |
 
 > **Network during install.** Tests always run with networking disabled. Dependency installation is also
 > offline by default, which fails for most real repositories. When you trust the repository's dependency
@@ -345,6 +420,8 @@ All settings are environment variables; see [`.env.example`](.env.example) for t
 - **Release integrity:** the reviewed diff is fingerprinted with SHA-256. The release agent refuses to commit
   if the workspace changed after review, stages only the approved files, refuses protected or base
   branches, and never merges.
+- **Agent tools (MCP):** read-only by default, scoped per agent, size/time/call limited, redacted, audited, and treated as untrusted data; stdio server commands come only from the operator's file; the DevFlow MCP server has no approve tool.
+- **Observability:** traces are redacted (and can be metadata-only); the LangSmith key is never returned by the API.
 - **Auth:** PBKDF2-SHA256 password hashing, JWT bearer tokens, and per-user ownership checks on every resource.
 
 ## REST API
@@ -369,6 +446,9 @@ Interactive docs are at `/docs`. The main endpoints:
 | GET | `/api/workflows/{id}/results` | File changes with diffs, test runs, reviews, PR |
 | GET | `/api/workflows/{id}/events?token=` | Server-Sent Events stream |
 | GET / PUT | `/api/settings`, POST `/api/settings/test-llm` | LLM/workflow settings, connectivity check |
+| GET | `/api/workflows/{id}/trace` | LangSmith run ids of the workflow (`?resolve_urls=true` for links) |
+| GET | `/api/integrations/status` | LangSmith and MCP status (never secrets or launch commands) |
+| POST | `/api/integrations/mcp/test`, `/api/integrations/langsmith/test` | Connect to MCP servers and list tools with their policy; check LangSmith |
 | GET | `/api/dashboard/stats` | Dashboard counters and recent PRs |
 | GET | `/health` | Database, sandbox and Ollama health |
 
@@ -396,6 +476,8 @@ cd frontend && npm test && npm run lint && npm run build
 
 **Planned, not implemented:**
 
+- MCP: OAuth for remote MCP servers (static headers/tokens from the operator's file are supported today), MCP resources/prompts (only tools are used), and sandboxing of third-party stdio servers (they run as the backend user; only add servers you trust).
+- LangSmith: prompt/dataset management and automated evaluators on the collected feedback (the signals are recorded; the evaluation pipelines are not built).
 - GitHub OAuth App login (personal access tokens are used today).
 - Patch-based edits for very large files. Agents rewrite whole files, and files over about 15 KB are not sent to the model, so they are not edited.
 - A distributed worker queue such as Celery or Arq for horizontal scaling. Today a single API process runs workflows in a thread pool.

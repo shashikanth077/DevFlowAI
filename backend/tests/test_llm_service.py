@@ -8,6 +8,7 @@ from app.core.errors import LLMError
 from app.schemas.requirement import RequirementAnalysis
 from app.services.llm_service import (
     LLMConfig,
+    LLMProvider,
     LLMService,
     OllamaProvider,
     OpenAICompatibleProvider,
@@ -58,10 +59,14 @@ def test_agent_model_override():
     assert llm.model_for("architect") == "scripted-model"
 
 
-class FlakyProvider(OllamaProvider):
+class FlakyProvider(LLMProvider):
+    name = "flaky"
+
     def __init__(self, errors):
         self.errors = list(errors)
-        self.name = "flaky"
+
+    def list_models(self):
+        return []
 
     def chat(self, messages, *, model, temperature, json_schema):
         if self.errors:

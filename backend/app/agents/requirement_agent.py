@@ -24,6 +24,9 @@ class RequirementAnalystAgent(BaseAgent):
     def run(self, requirement: str, repository_full_name: str = "") -> RequirementAnalysis:
         self.log("Analysing requirement")
         user = f"Target repository: {repository_full_name or 'unknown'}\n\nRequirement:\n{requirement.strip()}"
+        findings = self.tool_context(f"Analyse this software requirement and gather any reference facts needed:\n{requirement}")
+        if findings:
+            user += f"\n\n{findings}"
         analysis = self.llm.structured(self.name, SYSTEM_PROMPT, user, RequirementAnalysis)
         if not analysis.acceptance_criteria:
             analysis.acceptance_criteria = [fr.description for fr in analysis.functional_requirements]

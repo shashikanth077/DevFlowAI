@@ -97,3 +97,48 @@ def test_workflow_validation_and_ownership(client, auth_headers):
     assert client.get("/api/workflows/unknown", headers=auth_headers).status_code == 404
     assert client.get("/api/workflows", headers=auth_headers).json() == []
     assert client.get("/api/workflows/unknown/events?token=bad").status_code == 401
+
+
+def test_settings_mcp_preferences_roundtrip(client, auth_headers):
+    defaults = client.get("/api/settings", headers=auth_headers).json()
+    assert defaults["mcp_enabled"] is False and defaults["mcp_disabled_servers"] == []
+    updated = client.put("/api/settings", headers=auth_headers,
+                         json={"mcp_enabled": True, "mcp_disabled_servers": ["b", "a", "a"]}).json()
+    assert updated["mcp_enabled"] is True and updated["mcp_disabled_servers"] == ["a", "b"]
+
+
+def test_integrations_status_reports_langsmith_and_mcp(client, auth_headers, tmp_path, monkeypatch):
+    status = client.get("/api/integrations/status", headers=auth_headers).json()
+    assert status["langsmith"]["enabled"] is False and status["langsmith"]["project"] == "devflow-ai"
+    assert "api_key" not in str(status["langsmith"]).lower().replace("api_key_configured", "")
+    assert status["mcp"]["available"] is True and status["mcp"]["enabled_for_user"] is False
+    builtin = status["mcp"]["servers"][0]
+    assert builtin["name"] == "devflow-repo" and builtin["builtin"] and builtin["enabled_for_user"]
+    assert "command" not in builtin and "args" not in builtin  # never expose how servers are launched
+
+    servers = tmp_path / "mcp.json"
+    servers.write_text('{"mcpServers": {"docs": {"command": "echo", "env": {"TOKEN": "s3cret"}}, "bad name": {}}}')
+    from app.core.config import get_settings
+    monkeypatch.setattr("app.api.routes.integrations.get_settings",
+                        lambda: get_settings().model_copy(update={"mcp_servers_file": str(servers)}))
+    client.put("/api/settings", headers=auth_headers, json={"mcp_disabled_servers": ["docs"]})
+    status = client.get("/api/integrations/status", headers=auth_headers).json()
+    docs = next(s for s in status["mcp"]["servers"] if s["name"] == "docs")
+    assert docs["enabled_for_user"] is False and "s3cret" not in str(status)
+    assert len(status["mcp"]["config_errors"]) == 1
+
+
+def test_mcp_diagnostics_connects_and_classifies_tools(client, auth_headers):
+    result = client.post("/api/integrations/mcp/test", headers=auth_headers).json()
+    server = result["servers"][0]
+    assert server["name"] == "devflow-repo" and server["ok"], server
+    tools = {t["name"]: t for t in server["tools"]}
+    assert set(tools) >= {"read_file", "search_code", "list_directory"}
+    assert all(t["read_only"] and t["allowed"] for t in tools.values())
+    assert tools["read_file"]["parameters"] == ["path", "start_line", "end_line"]
+
+
+def test_langsmith_connection_test_without_key(client, auth_headers):
+    body = client.post("/api/integrations/langsmith/test", headers=auth_headers).json()
+    assert body["ok"] is False and "LANGSMITH_API_KEY" in body["message"]
+    assert client.post("/api/integrations/langsmith/test").status_code == 401

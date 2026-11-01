@@ -178,6 +178,8 @@ class MemoryRecorder:
         self.cancel = False
         self.workflow: dict = {}
         self.agents: list[dict] = []
+        self.tool_calls: list[dict] = []
+        self.trace_runs: list[str] = []
 
     def log(self, message, *, level="info", agent=None, data=None):
         self.logs.append((level, message, agent))
@@ -215,6 +217,12 @@ class MemoryRecorder:
     def save_pull_request(self, data):
         self.pull_requests.append(data)
 
+    def save_tool_call(self, call):
+        self.tool_calls.append(call)
+
+    def add_trace_run(self, run_id):
+        self.trace_runs.append(run_id)
+
 
 def make_runtime(llm, tmp_path, *, workflow_id="wf-test", sandbox=None, token=None, github_factory=None, **kw):
     from app.orchestration.runtime import WorkflowRuntime
@@ -229,3 +237,78 @@ def make_runtime(llm, tmp_path, *, workflow_id="wf-test", sandbox=None, token=No
         recorder=MemoryRecorder(), token_provider=lambda: token,
         github_factory=github_factory or GitHubService, **kw,
     )
+
+
+class FakeLangSmith:
+    """Records the HTTP traffic of a langsmith.Client so tests can assert on the traces it would have sent."""
+
+    def __init__(self) -> None:
+        import json as _json
+
+        import requests
+
+        self.requests: list[dict] = []
+        outer = self
+
+        class Session(requests.Session):
+            def request(self, method, url, **kwargs):  # noqa: D401
+                body = kwargs.get("data") if kwargs.get("data") is not None else kwargs.get("json")
+                if isinstance(body, (bytes, bytearray)):
+                    body = body.decode()
+                if isinstance(body, str):
+                    try:
+                        body = _json.loads(body)
+                    except ValueError:
+                        pass
+                path = "/" + url.split("//", 1)[-1].split("/", 1)[-1]
+                outer.requests.append({"method": method, "path": path, "body": body})
+                response = requests.Response()
+                response.status_code = 200
+                payload = body if isinstance(body, dict) else {}
+                if method == "GET" and path.startswith("/sessions"):
+                    response._content = _json.dumps([{
+                        "id": "22222222-2222-2222-2222-222222222222", "name": "devflow-ai",
+                        "start_time": "2026-01-01T00:00:00Z", "tenant_id": "33333333-3333-3333-3333-333333333333",
+                        "reference_dataset_id": None,
+                    }]).encode()
+                    response.headers["content-type"] = "application/json"
+                    return response
+                response._content = _json.dumps({"id": "00000000-0000-0000-0000-000000000000", **payload}).encode()
+                response.headers["content-type"] = "application/json"
+                return response
+
+        self.session = Session()
+
+    def client_options(self) -> dict:
+        return {"session": self.session, "auto_batch_tracing": False, "api_url": "https://langsmith.test",
+                "info": {"version": "test", "batch_ingest_config": {}}}
+
+    @property
+    def runs(self) -> dict[str, dict]:
+        """Final state of every run (create merged with its later update)."""
+        merged: dict[str, dict] = {}
+        for req in self.requests:
+            body = req["body"]
+            if req["path"].startswith("/runs") and isinstance(body, dict) and body.get("id"):
+                merged.setdefault(body["id"], {}).update(body)
+        return merged
+
+    def runs_named(self, prefix: str) -> list[dict]:
+        return [r for r in self.runs.values() if str(r.get("name", "")).startswith(prefix)]
+
+    def feedback(self) -> list[dict]:
+        return [r["body"] for r in self.requests if r["path"].startswith("/feedback") and isinstance(r["body"], dict)]
+
+    def ancestors(self, run: dict) -> list[str]:
+        names: list[str] = []
+        runs = self.runs
+        while run and run.get("parent_run_id"):
+            run = runs.get(str(run["parent_run_id"]))
+            if run:
+                names.append(run.get("name", ""))
+        return names
+
+    def everything_sent(self) -> str:
+        import json as _json
+
+        return _json.dumps([r["body"] for r in self.requests], default=str)

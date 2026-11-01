@@ -6,6 +6,7 @@ import json
 from pathlib import PurePosixPath
 from typing import Any
 
+from app.mcp_tools.loop import gather_context
 from app.orchestration.runtime import WorkflowRuntime
 from app.services.repository_service import Workspace
 
@@ -21,6 +22,17 @@ class BaseAgent:
 
     def log(self, message: str, *, level: str = "info", **data: Any) -> None:
         self.rt.recorder.log(message, level=level, agent=self.name, data=data or None)
+
+    def tool_context(self, goal: str) -> str:
+        """Run the MCP tool loop for this agent and return prompt-ready findings ("" when tools are off)."""
+        broker = self.rt.mcp
+        if broker is None:
+            return ""
+        context = gather_context(
+            self.llm, broker, self.name, goal, max_calls=self.rt.settings.mcp_max_tool_calls,
+            log=lambda message, level="info": self.log(message, level=level),
+        )
+        return context.render()
 
 
 def to_json(data: Any, limit: int = 20_000) -> str:

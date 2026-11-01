@@ -5,11 +5,14 @@ import type {
   GitHubBranch,
   GitHubRepo,
   GitHubStatus,
+  IntegrationsStatus,
   LLMTestResult,
+  McpServerTest,
   Project,
   PullRequest,
   Repository,
   SettingsUpdate,
+  TraceInfo,
   User,
   WorkflowDetail,
   WorkflowLog,
@@ -118,4 +121,10 @@ export const api = {
   settings: () => data<AppSettings>(http.get('/api/settings')),
   updateSettings: (body: SettingsUpdate) => data<AppSettings>(http.put('/api/settings', body)),
   testLLM: () => data<LLMTestResult>(http.post('/api/settings/test-llm')),
+
+  integrations: () => data<IntegrationsStatus>(http.get('/api/integrations/status')),
+  testMcp: () => data<{ servers: McpServerTest[] }>(http.post('/api/integrations/mcp/test', undefined, { timeout: 180_000 })),
+  testLangSmith: () => data<{ ok: boolean; message: string }>(http.post('/api/integrations/langsmith/test')),
+  workflowTrace: (id: string, resolveUrls = false) =>
+    data<TraceInfo>(http.get(`/api/workflows/${id}/trace`, { params: { resolve_urls: resolveUrls } })),
 };

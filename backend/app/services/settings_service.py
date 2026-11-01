@@ -28,6 +28,8 @@ def get_or_create_settings(db: Session, user_id: str) -> UserSettings:
             require_release_approval=s.require_release_approval,
             sandbox_allow_network_for_install=s.sandbox_allow_network_for_install,
             create_draft_pull_requests=False,
+            mcp_enabled=False,
+            mcp_disabled_servers=[],
         )
         db.add(row)
         db.flush()
@@ -47,6 +49,8 @@ def to_out(row: UserSettings) -> SettingsOut:
         require_release_approval=row.require_release_approval,
         sandbox_allow_network_for_install=row.sandbox_allow_network_for_install,
         create_draft_pull_requests=row.create_draft_pull_requests,
+        mcp_enabled=row.mcp_enabled,
+        mcp_disabled_servers=list(row.mcp_disabled_servers or []),
     )
 
 
@@ -57,6 +61,8 @@ def apply_update(row: UserSettings, update: SettingsUpdate) -> None:
         row.llm_api_key_encrypted = encrypt_secret(api_key) if api_key else None
     if "llm_base_url" in data:
         row.llm_base_url = data.pop("llm_base_url") or None
+    if "mcp_disabled_servers" in data:
+        row.mcp_disabled_servers = sorted(set(data.pop("mcp_disabled_servers") or []))
     if "agent_models" in data:
         row.agent_models = {k: v for k, v in (data.pop("agent_models") or {}).items() if v}
     for key, value in data.items():

@@ -33,6 +33,12 @@ class ArchitectureAgent(BaseAgent):
             f"Repository files:\n{self.llm.truncate(repo.get('file_tree', ''), 12_000)}\n\n"
             f"Contents of relevant files:\n{files_text}"
         )
+        findings = self.tool_context(
+            f"Design the implementation of: {state['requirement_analysis'].get('summary', '')}\n"
+            f"Relevant files: {[f['path'] for f in repo.get('relevant_files', [])]}"
+        )
+        if findings:
+            user += f"\n\n{findings}"
         self.log("Designing implementation approach")
         plan = self.llm.structured(self.name, SYSTEM_PROMPT, user, ArchitecturePlan)
         components = repo.get("components", [])

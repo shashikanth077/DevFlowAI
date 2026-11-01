@@ -10,14 +10,16 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
-from pydantic import Field, field_validator
+from pydantic import AliasChoices, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 LLMProviderName = Literal["ollama", "openai", "mistral"]
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file=".env", env_file_encoding="utf-8", extra="ignore", populate_by_name=True
+    )
 
     # --- Application -----------------------------------------------------
     app_name: str = "DevFlow AI"
@@ -76,6 +78,35 @@ class Settings(BaseSettings):
     sandbox_python_image: str = "python:3.11-slim"
     sandbox_node_image: str = "node:20-slim"
     sandbox_output_limit_chars: int = 20_000
+
+    # --- Observability (LangSmith) -----------------------------------------
+    # The standard LANGSMITH_* / LANGCHAIN_TRACING_V2 variable names are honoured. DevFlow reads them
+    # itself and routes every trace through one redacting client (see app/observability).
+    langsmith_tracing: bool = Field(
+        default=False, validation_alias=AliasChoices("LANGSMITH_TRACING", "LANGCHAIN_TRACING_V2")
+    )
+    langsmith_api_key: str | None = Field(
+        default=None, validation_alias=AliasChoices("LANGSMITH_API_KEY", "LANGCHAIN_API_KEY")
+    )
+    langsmith_project: str = Field(
+        default="devflow-ai", validation_alias=AliasChoices("LANGSMITH_PROJECT", "LANGCHAIN_PROJECT")
+    )
+    langsmith_endpoint: str = Field(
+        default="https://api.smith.langchain.com",
+        validation_alias=AliasChoices("LANGSMITH_ENDPOINT", "LANGCHAIN_ENDPOINT"),
+    )
+    langsmith_hide_content: bool = False  # send only structure/metadata, never prompts, code or outputs
+    langsmith_max_field_chars: int = 20_000
+
+    # --- MCP (Model Context Protocol) ----------------------------------------
+    mcp_enabled: bool = True  # server-wide switch; users still opt in under Settings
+    mcp_servers_file: str | None = None  # JSON file with admin-approved MCP servers
+    mcp_builtin_repo_server: bool = True  # read-only repository search/read tools for agents
+    mcp_max_tool_calls: int = 6  # per agent invocation
+    mcp_max_calls_per_workflow: int = 80
+    mcp_connect_timeout_seconds: float = 30.0
+    mcp_tool_timeout_seconds: float = 60.0
+    mcp_result_max_chars: int = 8_000
 
     # --- Workflow --------------------------------------------------------
     workflow_max_retries: int = 3

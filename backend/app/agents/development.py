@@ -152,6 +152,9 @@ class DevelopmentAgent(BaseAgent):
             f"{task_text}\n\nRepository files:\n{tree}\n\n"
             f"Current contents of files you may modify (complete files):\n{files_text or '(none)'}"
         )
+        findings = self.tool_context(task_text)
+        if findings:
+            user += f"\n\n{findings}"
         result = self.llm.structured(self.name, self.system_prompt, user, CodeChangeSet)
         return result, set(included)
 

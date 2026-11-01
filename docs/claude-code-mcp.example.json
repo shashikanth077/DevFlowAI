@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "devflow-ai": {
+      "command": "python",
+      "args": ["-m", "app.mcp_tools.devflow_server"],
+      "cwd": "/path/to/DevFlowAI/backend",
+      "env": {
+        "DEVFLOW_API_URL": "http://localhost:8000",
+        "DEVFLOW_API_TOKEN": "<access token from POST /api/auth/login>"
+      }
+    }
+  }
+}

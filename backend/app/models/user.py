@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, false
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database.connection import Base, TimestampMixin, utcnow
@@ -47,6 +47,8 @@ class UserSettings(TimestampMixin, Base):
     require_release_approval: Mapped[bool] = mapped_column(Boolean, nullable=False)
     sandbox_allow_network_for_install: Mapped[bool] = mapped_column(Boolean, nullable=False)
     create_draft_pull_requests: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    mcp_enabled: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false(), nullable=False)
+    mcp_disabled_servers: Mapped[list | None] = mapped_column(JSONType, default=list)
 
     user: Mapped[User] = relationship(back_populates="settings")
 

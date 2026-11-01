@@ -6,6 +6,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field, field_validator
 
 from app.schemas.common import APIModel
+from app.schemas.integrations import ToolCallOut
 from app.schemas.project import validate_branch_name
 from app.schemas.task import TaskOut
 
@@ -78,6 +79,7 @@ class WorkflowDetail(WorkflowSummary):
     architecture_plan: dict | None
     error_details: dict | None
     commit_id: str | None
+    trace_run_ids: list[str] = []
     started_at: datetime | None
     agent_executions: list[AgentExecutionOut]
     tasks: list[TaskOut]
@@ -145,6 +147,7 @@ class WorkflowResults(BaseModel):
     file_changes: list[FileChangeOut]
     test_results: list[TestResultOut]
     review_reports: list[ReviewReportOut]
+    tool_calls: list[ToolCallOut] = []
     pull_request: PullRequestOut | None
 
 
