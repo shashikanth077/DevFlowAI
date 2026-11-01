@@ -1,0 +1,75 @@
+# DevFlow AI - full local stack
+#   docker compose up -d --build
+#   dashboard: http://localhost:3000   API docs: http://localhost:8000/docs
+name: devflow-ai
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-devflow}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-devflow}
+      POSTGRES_DB: ${POSTGRES_DB:-devflow}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-devflow}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    ports:
+      - "5432:5432"
+
+  ollama:
+    image: ollama/ollama:latest
+    volumes:
+      - ollama-models:/root/.ollama
+    ports:
+      - "11434:11434"
+    # Uncomment for NVIDIA GPUs:
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices: [{ driver: nvidia, count: all, capabilities: [gpu] }]
+
+  ollama-pull:
+    image: ollama/ollama:latest
+    depends_on: [ollama]
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+    entrypoint: ["sh", "-c", "sleep 3 && ollama pull ${LLM_MODEL:-llama3.1:8b}"]
+    restart: "no"
+
+  backend:
+    build: ./backend
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-devflow}:${POSTGRES_PASSWORD:-devflow}@postgres:5432/${POSTGRES_DB:-devflow}
+      OLLAMA_BASE_URL: http://ollama:11434
+      WORKSPACE_ROOT: /var/lib/devflow/workspaces
+      CORS_ORIGINS: http://localhost:3000,http://localhost:5173
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    volumes:
+      - workspaces:/var/lib/devflow/workspaces
+      # The backend (not generated code) needs the Docker API to start sandbox
+      # containers. Sandboxes never receive this socket or any host mount.
+      - /var/run/docker.sock:/var/run/docker.sock
+    group_add:
+      - "${DOCKER_GID:-999}"
+
+  frontend:
+    build: ./frontend
+    depends_on: [backend]
+    ports:
+      - "3000:80"
+
+volumes:
+  postgres-data:
+  ollama-models:
+  workspaces:
