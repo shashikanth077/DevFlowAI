@@ -136,6 +136,12 @@ class CodeReviewAgent(BaseAgent):
             f"Files and responsible developer: {to_json(state.get('file_ownership', {}), 3_000)}\n\n"
             f"Diff:\n{self.llm.truncate(diff, self.llm.config.context_chars - 15_000)}"
         )
+        findings = self.tool_context(
+            "Review this change for bugs and security issues. Look up related code if the diff is not enough.\n"
+            f"Changed files: {list(numstat)}\nRequirement: {state.get('user_requirement', '')[:1500]}"
+        )
+        if findings:
+            user += f"\n\n{findings}"
         self.log("Requesting independent LLM review")
         verdict = self.llm.structured(self.name, SYSTEM_PROMPT, user, LLMReview)
         ownership = state.get("file_ownership", {})

@@ -12,6 +12,8 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_user, get_owned_project, get_owned_workflow, get_stream_user
 from app.database.session import get_db, session_factory
 from app.models import Project, User, WorkflowExecution, WorkflowLog
+from app.observability.tracing import get_tracing
+from app.schemas.integrations import ToolCallOut, TraceInfo
 from app.schemas.task import TaskOut
 from app.schemas.workflow import (
     AgentExecutionOut,
@@ -48,6 +50,7 @@ def workflow_detail(w: WorkflowExecution) -> WorkflowDetail:
         pending_approval=w.pending_approval, approvals=w.approvals or [],
         requirement_analysis=w.requirement_analysis, repository_analysis=w.repository_analysis,
         architecture_plan=w.architecture_plan, error_details=w.error_details, commit_id=w.commit_id,
+        trace_run_ids=list(w.trace_run_ids or []),
         started_at=w.started_at,
         agent_executions=[AgentExecutionOut.model_validate(a) for a in w.agent_executions],
         tasks=[TaskOut.model_validate(t) for t in w.tasks],
@@ -114,8 +117,22 @@ def workflow_results(workflow_id: str, db: Session = Depends(get_db), user: User
         file_changes=[FileChangeOut.model_validate(f) for f in sorted(w.file_changes, key=lambda f: f.path)],
         test_results=[TestResultOut.model_validate(t) for t in w.test_results],
         review_reports=[ReviewReportOut.model_validate(r) for r in w.review_reports],
+        tool_calls=[ToolCallOut.model_validate(c) for c in w.tool_calls],
         pull_request=PullRequestOut.model_validate(w.pull_request) if w.pull_request else None,
     )
+
+
+@router.get("/{workflow_id}/trace", response_model=TraceInfo)
+def workflow_trace(workflow_id: str, resolve_urls: bool = False, db: Session = Depends(get_db),
+                   user: User = Depends(get_current_user)):
+    """LangSmith trace runs of this workflow (one root run per execution segment)."""
+    w = get_owned_workflow(workflow_id, db, user)
+    tracing = get_tracing()
+    run_ids = list(w.trace_run_ids or [])
+    urls = {rid: tracing.run_url(rid) for rid in run_ids} if resolve_urls else {}
+    note = None if tracing.enabled else (
+        "LangSmith tracing is disabled." + (" Runs below were traced earlier." if run_ids else ""))
+    return TraceInfo(enabled=tracing.enabled, project=tracing.project, run_ids=run_ids, urls=urls, note=note)
 
 
 @router.get("/{workflow_id}/events")

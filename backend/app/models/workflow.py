@@ -34,6 +34,7 @@ class WorkflowExecution(TimestampMixin, Base):
     repository_analysis: Mapped[dict | None] = mapped_column(JSONType)
     architecture_plan: Mapped[dict | None] = mapped_column(JSONType)
     error_details: Mapped[dict | None] = mapped_column(JSONType)
+    trace_run_ids: Mapped[list | None] = mapped_column(JSONType, default=list)  # LangSmith root runs, one per segment
     commit_id: Mapped[str | None] = mapped_column(String(64))
     pull_request_url: Mapped[str | None] = mapped_column(String(500))
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -47,6 +48,9 @@ class WorkflowExecution(TimestampMixin, Base):
         back_populates="workflow", cascade="all, delete-orphan", order_by="DevelopmentTask.position"
     )
     file_changes: Mapped[list[FileChange]] = relationship(back_populates="workflow", cascade="all, delete-orphan")
+    tool_calls: Mapped[list[ToolCall]] = relationship(
+        back_populates="workflow", cascade="all, delete-orphan", order_by="ToolCall.id"
+    )
     test_results: Mapped[list[TestExecutionResult]] = relationship(
         back_populates="workflow", cascade="all, delete-orphan", order_by="TestExecutionResult.created_at"
     )
@@ -90,6 +94,27 @@ class WorkflowLog(Base):
     agent: Mapped[str | None] = mapped_column(String(60))
     message: Mapped[str] = mapped_column(Text, nullable=False)
     data: Mapped[dict | None] = mapped_column(JSONType)
+
+
+class ToolCall(Base):
+    """One MCP tool call made by an agent (allowed, blocked or failed) - the audit trail for agent tool use."""
+
+    __tablename__ = "tool_calls"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    workflow_id: Mapped[str] = mapped_column(
+        ForeignKey("workflow_executions.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+    agent: Mapped[str] = mapped_column(String(60), nullable=False)
+    server: Mapped[str] = mapped_column(String(100), nullable=False)
+    tool: Mapped[str] = mapped_column(String(200), nullable=False)
+    arguments: Mapped[dict] = mapped_column(JSONType, default=dict, nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False)  # ok | error | blocked
+    result_preview: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    duration_ms: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+
+    workflow: Mapped[WorkflowExecution] = relationship(back_populates="tool_calls")
 
 
 class FileChange(TimestampMixin, Base):

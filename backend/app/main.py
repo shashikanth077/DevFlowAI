@@ -13,11 +13,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
 
-from app.api.routes import auth, dashboard, github, projects, repositories, settings, workflows
+from app.api.routes import auth, dashboard, github, integrations, projects, repositories, settings, workflows
 from app.core.config import get_settings
 from app.core.errors import DevFlowError
 from app.core.logging import configure_logging
 from app.database.connection import get_engine
+from app.observability.tracing import configure_tracing, get_tracing
 from app.orchestration.checkpointing import close_checkpointer
 from app.services.execution_service import DockerSandbox
 from app.services.workflow_service import get_workflow_manager
@@ -30,6 +31,7 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     cfg = get_settings()
     configure_logging(cfg.log_level, cfg.log_json)
     Path(cfg.workspace_root).mkdir(parents=True, exist_ok=True)
+    configure_tracing(cfg)
     manager = get_workflow_manager()
     if cfg.resume_workflows_on_startup and cfg.environment != "test":
         try:
@@ -40,6 +42,7 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
             logger.exception("Workflow recovery failed")
     yield
     manager.shutdown()
+    get_tracing().flush()
     close_checkpointer()
 
 
@@ -54,7 +57,7 @@ def create_app() -> FastAPI:
     async def devflow_error_handler(_: Request, exc: DevFlowError) -> JSONResponse:
         return JSONResponse(status_code=exc.status_code, content={"detail": exc.message, "details": exc.details})
 
-    for module in (auth, projects, repositories, github, workflows, settings, dashboard):
+    for module in (auth, projects, repositories, github, workflows, settings, dashboard, integrations):
         app.include_router(module.router)
 
     @app.get("/health", tags=["health"])

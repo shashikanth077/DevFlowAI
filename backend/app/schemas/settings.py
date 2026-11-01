@@ -22,6 +22,8 @@ class SettingsOut(BaseModel):
     require_release_approval: bool
     sandbox_allow_network_for_install: bool
     create_draft_pull_requests: bool
+    mcp_enabled: bool = False
+    mcp_disabled_servers: list[str] = Field(default_factory=list)
     available_agents: list[str] = Field(default_factory=lambda: list(AGENT_NAMES))
 
 
@@ -37,6 +39,8 @@ class SettingsUpdate(BaseModel):
     require_release_approval: bool | None = None
     sandbox_allow_network_for_install: bool | None = None
     create_draft_pull_requests: bool | None = None
+    mcp_enabled: bool | None = None
+    mcp_disabled_servers: list[str] | None = None
 
 
 class LLMTestResponse(BaseModel):

@@ -24,6 +24,7 @@ export function workflowFixture(overrides: Partial<WorkflowDetail> = {}): Workfl
     architecture_plan: null,
     error_details: null,
     commit_id: null,
+    trace_run_ids: [],
     started_at: '2026-01-01T10:00:00Z',
     tasks: [
       { id: 't1', task_key: 'T1', position: 0, title: 'Implement subtract', description: '', assigned_agent: 'backend', status: 'completed', dependencies: [], target_files: ['app/calc.py'], acceptance_criteria: [], attempts: 2, notes: '' },

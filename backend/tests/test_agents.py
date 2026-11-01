@@ -191,3 +191,41 @@ def test_review_approves_clean_change(tmp_path, remote_repo):
     report = CodeReviewAgent(rt).run(_state(file_ownership={"app/calc.py": "backend"},
                                             test_results={"status": "passed"}))
     assert report.approved and len(report.diff_hash) == 64
+
+
+def test_developer_prompt_includes_fenced_tool_findings_and_audit_trail(tmp_path, remote_repo):
+    from app.mcp_tools.broker import McpToolBroker
+    from app.mcp_tools.config import builtin_repo_spec
+
+    new_calc = SAMPLE_CALC + "\n\ndef sub(a: int, b: int) -> int:\n    return a - b\n"
+    llm, provider = make_llm({
+        "CodeChangeSet": {"summary": "did it", "changes": [{"path": "app/calc.py", "action": "modify", "content": new_calc}]},
+        "ToolDecision*": [{"action": "call_tool", "server": "devflow-repo", "tool": "search_code",
+                           "arguments": {"query": "def add"}}, {"action": "finish"}],
+    })
+    rt = make_runtime(llm, tmp_path)
+    rt.repositories.clone(str(remote_repo()), "main", rt.workflow_id, token=None)
+    rt.mcp = McpToolBroker([builtin_repo_spec(rt.repositories.workspace_dir(rt.workflow_id) / "repo")],
+                           rt.settings, rt.recorder)
+    task = {"id": "T1", "title": "t", "description": "", "assigned_agent": "backend", "dependencies": [],
+            "target_files": ["app/calc.py"], "acceptance_criteria": [], "status": "pending", "attempts": 0,
+            "position": 0}
+    state = _state(development_tasks=[task], file_ownership={},
+                   repository_analysis={"components": [], "file_tree": "", "relevant_files": []})
+    try:
+        update = BackendDevelopmentAgent(rt).run(state)
+    finally:
+        rt.close()
+    assert update["modified_files"] == ["app/calc.py"]
+    prompt = next(c for c in provider.calls if c["schema"] == "CodeChangeSet")["messages"][1]["content"]
+    assert "UNTRUSTED" in prompt and "app/calc.py:4: def add(a: int, b: int) -> int:" in prompt
+    assert [(c["agent"], c["tool"], c["status"]) for c in rt.recorder.tool_calls] == [
+        ("backend_developer", "search_code", "ok")]
+
+
+def test_agents_work_unchanged_when_mcp_is_off(tmp_path, remote_repo):
+    rt, state, provider = _dev_setup(tmp_path, remote_repo, [
+        {"path": "app/calc.py", "action": "modify", "content": SAMPLE_CALC + "\n# ok\n"}])
+    assert rt.mcp is None
+    BackendDevelopmentAgent(rt).run(state)
+    assert provider.count("ToolDecision") == 0 and rt.recorder.tool_calls == []

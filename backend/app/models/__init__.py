@@ -9,6 +9,7 @@ from app.models.workflow import (
     FileChange,
     PullRequest,
     TestExecutionResult,
+    ToolCall,
     WorkflowExecution,
     WorkflowLog,
 )
@@ -23,6 +24,7 @@ __all__ = [
     "Project",
     "PullRequest",
     "TestExecutionResult",
+    "ToolCall",
     "User",
     "UserSettings",
     "WorkflowExecution",

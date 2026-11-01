@@ -147,6 +147,7 @@ export interface WorkflowDetail extends WorkflowSummary {
   architecture_plan: Record<string, any> | null;
   error_details: { message?: string; node?: string; agent?: string; [key: string]: unknown } | null;
   commit_id: string | null;
+  trace_run_ids: string[];
   started_at: string | null;
   agent_executions: AgentExecution[];
   tasks: Task[];
@@ -242,6 +243,7 @@ export interface WorkflowResults {
   file_changes: FileChange[];
   test_results: TestResult[];
   review_reports: ReviewReport[];
+  tool_calls: ToolCall[];
   pull_request: PullRequest | null;
 }
 
@@ -269,6 +271,8 @@ export interface AppSettings {
   require_release_approval: boolean;
   sandbox_allow_network_for_install: boolean;
   create_draft_pull_requests: boolean;
+  mcp_enabled: boolean;
+  mcp_disabled_servers: string[];
   available_agents: string[];
 }
 
@@ -282,4 +286,68 @@ export interface LLMTestResult {
   model: string;
   message: string;
   available_models: string[];
+}
+
+export interface ToolCall {
+  id: number;
+  created_at: string;
+  agent: string;
+  server: string;
+  tool: string;
+  arguments: Record<string, unknown>;
+  status: 'ok' | 'error' | 'blocked';
+  result_preview: string;
+  duration_ms: number;
+}
+
+export interface TraceInfo {
+  enabled: boolean;
+  project: string;
+  run_ids: string[];
+  urls: Record<string, string | null>;
+  note: string | null;
+}
+
+export interface McpServerInfo {
+  name: string;
+  description: string;
+  transport: 'stdio' | 'http';
+  builtin: boolean;
+  agents: string[];
+  allow_write_tools: boolean;
+  enabled_for_user: boolean;
+}
+
+export interface IntegrationsStatus {
+  langsmith: {
+    enabled: boolean;
+    api_key_configured: boolean;
+    project: string;
+    endpoint: string;
+    hide_content: boolean;
+    redaction: string;
+  };
+  mcp: {
+    available: boolean;
+    enabled_for_user: boolean;
+    max_tool_calls: number;
+    servers: McpServerInfo[];
+    config_errors: string[];
+  };
+}
+
+export interface McpToolInfo {
+  name: string;
+  description: string;
+  read_only: boolean;
+  allowed: boolean;
+  reason: string;
+  parameters: string[];
+}
+
+export interface McpServerTest {
+  name: string;
+  ok: boolean;
+  error: string | null;
+  tools: McpToolInfo[];
 }

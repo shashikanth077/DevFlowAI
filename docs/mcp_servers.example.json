@@ -1,0 +1,18 @@
+{
+  "mcpServers": {
+    "docs": {
+      "description": "Library documentation lookup (example; replace with a server you trust)",
+      "command": "npx",
+      "args": ["-y", "@example/docs-mcp-server"],
+      "env": { "DOCS_API_KEY": "${DOCS_API_KEY}" },
+      "agents": ["architect", "frontend_developer", "backend_developer"]
+    },
+    "issue-tracker": {
+      "description": "Read-only access to the team's issue tracker over streamable HTTP",
+      "type": "http",
+      "url": "https://mcp.example.com/mcp",
+      "headers": { "Authorization": "Bearer ${TRACKER_TOKEN}" },
+      "agents": ["requirement_analyst", "architect"]
+    }
+  }
+}

@@ -22,6 +22,7 @@ from dataclasses import dataclass, field
 from typing import Any, TypeVar
 
 import httpx
+from langsmith import traceable
 from pydantic import BaseModel, ValidationError
 
 from app.core.config import Settings, get_settings
@@ -68,6 +69,12 @@ class ProviderError(Exception):
         self.transient = transient
 
 
+@dataclass
+class ChatResponse:
+    content: str
+    usage: dict[str, int] | None = None  # input_tokens / output_tokens / total_tokens
+
+
 class LLMProvider(ABC):
     name: str
 
@@ -76,6 +83,12 @@ class LLMProvider(ABC):
         self, messages: list[dict[str, str]], *, model: str, temperature: float, json_schema: dict | None
     ) -> str:
         """Return the assistant message content."""
+
+    def chat_full(
+        self, messages: list[dict[str, str]], *, model: str, temperature: float, json_schema: dict | None
+    ) -> ChatResponse:
+        """Like :meth:`chat` but also reports token usage when the provider exposes it."""
+        return ChatResponse(self.chat(messages, model=model, temperature=temperature, json_schema=json_schema))
 
     @abstractmethod
     def list_models(self) -> list[str]: ...
@@ -96,6 +109,9 @@ class OllamaProvider(LLMProvider):
         self._client = httpx.Client(base_url=base_url.rstrip("/"), timeout=timeout)
 
     def chat(self, messages, *, model, temperature, json_schema):
+        return self.chat_full(messages, model=model, temperature=temperature, json_schema=json_schema).content
+
+    def chat_full(self, messages, *, model, temperature, json_schema):
         payload: dict[str, Any] = {
             "model": model,
             "messages": messages,
@@ -113,7 +129,12 @@ class OllamaProvider(LLMProvider):
                 f"Model '{model}' is not available in Ollama. Run: ollama pull {model}", transient=False
             )
         _raise_for_status(response, "Ollama")
-        return response.json().get("message", {}).get("content", "")
+        body = response.json()
+        usage = None
+        if "prompt_eval_count" in body or "eval_count" in body:
+            inp, out = int(body.get("prompt_eval_count", 0)), int(body.get("eval_count", 0))
+            usage = {"input_tokens": inp, "output_tokens": out, "total_tokens": inp + out}
+        return ChatResponse(body.get("message", {}).get("content", ""), usage)
 
     def list_models(self) -> list[str]:
         try:
@@ -137,6 +158,9 @@ class OpenAICompatibleProvider(LLMProvider):
         )
 
     def chat(self, messages, *, model, temperature, json_schema):
+        return self.chat_full(messages, model=model, temperature=temperature, json_schema=json_schema).content
+
+    def chat_full(self, messages, *, model, temperature, json_schema):
         payload: dict[str, Any] = {"model": model, "messages": messages, "temperature": temperature}
         if json_schema is not None:
             if self._structured_mode == "json_schema":
@@ -151,10 +175,16 @@ class OpenAICompatibleProvider(LLMProvider):
         except httpx.TransportError as exc:
             raise ProviderError(f"Cannot reach {self.name}: {exc}", transient=True) from exc
         _raise_for_status(response, self.name)
-        choices = response.json().get("choices") or []
+        body = response.json()
+        choices = body.get("choices") or []
         if not choices:
             raise ProviderError(f"{self.name} returned no choices", transient=True)
-        return choices[0].get("message", {}).get("content") or ""
+        raw_usage = body.get("usage") or {}
+        usage = None
+        if raw_usage:
+            inp, out = int(raw_usage.get("prompt_tokens", 0)), int(raw_usage.get("completion_tokens", 0))
+            usage = {"input_tokens": inp, "output_tokens": out, "total_tokens": int(raw_usage.get("total_tokens", inp + out))}
+        return ChatResponse(choices[0].get("message", {}).get("content") or "", usage)
 
     def list_models(self) -> list[str]:
         try:
@@ -180,6 +210,22 @@ def build_provider(config: LLMConfig, settings: Settings | None = None) -> LLMPr
             config.timeout_seconds, "json_object",
         )
     raise LLMError(f"Unsupported LLM provider '{config.provider}'")
+
+
+def _trace_inputs(inputs: dict) -> dict:
+    return {"messages": inputs.get("messages"), "model": inputs.get("model"),
+            "temperature": inputs.get("temperature"), "structured_output": inputs.get("json_schema") is not None}
+
+
+@traceable(run_type="llm", name="llm.chat", process_inputs=_trace_inputs)
+def _traced_chat(provider: LLMProvider, messages: list, model: str, temperature: float,
+                 json_schema: dict | None) -> dict[str, Any]:
+    """One provider call. A no-op wrapper unless a LangSmith run is active (see app/observability)."""
+    response = provider.chat_full(messages, model=model, temperature=temperature, json_schema=json_schema)
+    out: dict[str, Any] = {"content": response.content}
+    if response.usage:
+        out["usage_metadata"] = response.usage
+    return out
 
 
 _FENCE_RE = re.compile(r"```(?:json)?\s*(.*?)```", re.DOTALL)
@@ -232,9 +278,16 @@ class LLMService:
         delay = 1.0
         for attempt in range(1, self.config.max_retries + 1):
             try:
-                return self.provider.chat(
-                    messages, model=model, temperature=self.config.temperature, json_schema=schema
+                result = _traced_chat(
+                    self.provider, messages, model, self.config.temperature, schema,
+                    langsmith_extra={
+                        "name": f"llm:{agent}",
+                        "tags": [agent],
+                        "metadata": {"agent": agent, "ls_provider": self.provider.name, "ls_model_name": model,
+                                     "ls_temperature": self.config.temperature, "attempt": attempt},
+                    },
                 )
+                return result["content"]
             except ProviderError as exc:
                 logger.warning(
                     "LLM provider error", extra={"agent": agent, "attempt": attempt, "error": str(exc)}

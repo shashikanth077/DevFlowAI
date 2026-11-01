@@ -17,6 +17,8 @@ from app.core.config import Settings, get_settings
 from app.core.errors import ConflictError, DevFlowError, NotFoundError
 from app.database.connection import utcnow
 from app.database.session import session_scope
+from app.mcp_tools.broker import McpToolBroker
+from app.mcp_tools.config import resolve_specs
 from app.models import (
     AgentExecution,
     CodeReviewReport,
@@ -25,9 +27,11 @@ from app.models import (
     Project,
     PullRequest,
     TestExecutionResult,
+    ToolCall,
     WorkflowExecution,
     WorkflowLog,
 )
+from app.observability.tracing import get_tracing
 from app.orchestration.checkpointing import get_checkpointer
 from app.orchestration.graph import compile_graph
 from app.orchestration.runtime import WorkflowRuntime
@@ -158,6 +162,16 @@ class DBRecorder:
             assert workflow is not None
             db.add(PullRequest(workflow_id=self.workflow_id, user_id=workflow.user_id, **data))
 
+    def save_tool_call(self, call: dict[str, Any]) -> None:
+        with session_scope() as db:
+            db.add(ToolCall(workflow_id=self.workflow_id, **call))
+
+    def add_trace_run(self, run_id: str) -> None:
+        with session_scope() as db:
+            row = db.get(WorkflowExecution, self.workflow_id)
+            if row is not None:
+                row.trace_run_ids = [*(row.trace_run_ids or []), run_id]
+
 
 RuntimeFactory = Callable[[str], WorkflowRuntime]
 
@@ -175,18 +189,29 @@ def default_runtime_factory(workflow_id: str) -> WorkflowRuntime:
         draft = prefs.create_draft_pull_requests
         exec_approval = prefs.require_execution_approval
         release_approval = prefs.require_release_approval
+        use_mcp = settings.mcp_enabled and prefs.mcp_enabled
+        disabled_mcp = set(prefs.mcp_disabled_servers or [])
 
     def token_provider() -> str | None:
         with session_scope() as db:
             return github_token_for(db, user_id)
 
+    repositories = RepositoryService(settings)
+    recorder = DBRecorder(workflow_id)
+    broker = None
+    if use_mcp:
+        specs, errors = resolve_specs(settings, repositories.workspace_dir(workflow_id) / "repo")
+        for error in errors:
+            recorder.log(f"MCP configuration: {error}", level="warning")
+        if specs:
+            broker = McpToolBroker(specs, settings, recorder, disabled_servers=disabled_mcp)
     return WorkflowRuntime(
         workflow_id=workflow_id, user_id=user_id, settings=settings, llm=LLMService(llm_config),
-        repositories=RepositoryService(settings),
+        repositories=repositories,
         sandbox=DockerSandbox(settings, allow_network_for_install=allow_network),
-        recorder=DBRecorder(workflow_id), token_provider=token_provider,
+        recorder=recorder, token_provider=token_provider,
         create_draft_pull_requests=draft, require_execution_approval=exec_approval,
-        require_release_approval=release_approval,
+        require_release_approval=release_approval, mcp=broker,
     )
 
 
@@ -250,7 +275,9 @@ class WorkflowManager:
         }]
         workflow.pending_approval = None
         workflow.status = "running"
+        last_run = (workflow.trace_run_ids or [None])[-1]
         db.commit()
+        get_tracing().feedback(last_run, f"human_approval_{gate}", 1.0 if approved else 0.0, comment or None)
         self.submit(workflow.id, Command(resume={"approved": approved, "comment": comment}))
         return workflow
 
@@ -318,11 +345,20 @@ class WorkflowManager:
     def _execute(self, workflow_id: str, payload: Any) -> None:
         recorder = DBRecorder(workflow_id)
         config = self._config(workflow_id)
+        tracing = get_tracing()
+        run_id: str | None = None
+        runtime = None
         try:
             runtime = self.runtime_factory(workflow_id)
             graph = compile_graph(runtime, self.checkpointer)
             recorder.update_workflow(status="running")
-            graph.invoke(payload, config)
+            traced_config, run_id = tracing.run_config(
+                config, workflow_id=workflow_id, metadata=self._trace_metadata(workflow_id, runtime),
+                resumed=payload is None or isinstance(payload, Command),
+            )
+            if run_id:
+                recorder.add_trace_run(run_id)
+            graph.invoke(payload, traced_config)
             snapshot = graph.get_state(config)
         except Exception as exc:  # noqa: BLE001
             message = exc.message if isinstance(exc, DevFlowError) else f"{type(exc).__name__}: {exc}"
@@ -330,8 +366,13 @@ class WorkflowManager:
             recorder.log(f"Workflow failed: {message}", level="error", agent="task_orchestrator")
             recorder.update_workflow(status="failed", error_details={"message": message, "type": type(exc).__name__},
                                      completed_at=utcnow())
+            tracing.feedback(run_id, "workflow_completed", 0.0, message[:300])
             self._cleanup(workflow_id)
             return
+        finally:
+            if runtime is not None:
+                runtime.close()
+            tracing.flush()
 
         interrupts = list(getattr(snapshot, "interrupts", ()) or [])
         if interrupts:
@@ -356,7 +397,37 @@ class WorkflowManager:
         recorder.update_workflow(**fields)
         recorder.log(f"Workflow {status}", level="info" if status == "completed" else "warning",
                      agent="task_orchestrator")
+        self._report_outcome(tracing, run_id, status, values)
+        tracing.flush()
         self._cleanup(workflow_id)
+
+    def _trace_metadata(self, workflow_id: str, runtime: WorkflowRuntime) -> dict[str, Any]:
+        with session_scope() as db:
+            workflow = db.get(WorkflowExecution, workflow_id)
+            project = workflow.project if workflow else None
+            meta: dict[str, Any] = {
+                "project_id": workflow.project_id if workflow else None,
+                "project_name": project.name if project else None,
+                "repository": project.repository.full_name if project else None,
+                "base_branch": workflow.base_branch if workflow else None,
+                "max_retries": workflow.max_retries if workflow else None,
+            }
+        meta.update(user_id=runtime.user_id, llm_provider=runtime.llm.config.provider,
+                    llm_model=runtime.llm.config.model, mcp_enabled=runtime.mcp is not None,
+                    environment=self.settings.environment)
+        return meta
+
+    @staticmethod
+    def _report_outcome(tracing, run_id: str | None, status: str, values: dict[str, Any]) -> None:
+        """Send the workflow's quality signals to LangSmith as feedback on the final trace segment."""
+        tests = (values.get("test_results") or {}).get("status")
+        if tests:
+            tracing.feedback(run_id, "tests_passed", 1.0 if tests == "passed" else 0.0, tests)
+        review = values.get("review_feedback") or {}
+        if "approved" in review:
+            tracing.feedback(run_id, "review_approved", 1.0 if review["approved"] else 0.0, review.get("summary"))
+        tracing.feedback(run_id, "workflow_completed", 1.0 if status == "completed" else 0.0, status)
+        tracing.feedback(run_id, "retries_used", None, value=values.get("retry_count", 0))
 
     def _cleanup(self, workflow_id: str) -> None:
         if self.settings.cleanup_workspaces:

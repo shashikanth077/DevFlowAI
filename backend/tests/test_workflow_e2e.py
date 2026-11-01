@@ -95,7 +95,8 @@ class FakeGitHub:
 def e2e(client, auth_headers, remote_repo, tmp_path):
     """Wire a WorkflowManager with scripted LLM / fake GitHub into the API."""
 
-    def build(sandbox, *, script=None, checkpointer=None, sandbox_image=None, max_retries=3):
+    def build(sandbox, *, script=None, checkpointer=None, sandbox_image=None, max_retries=3, mcp=False,
+              mcp_enabled_pref=None):
         bare = remote_repo()
         github = FakeGitHub()
         script = script or llm_script()
@@ -106,6 +107,12 @@ def e2e(client, auth_headers, remote_repo, tmp_path):
             rt = make_runtime(llm, tmp_path, workflow_id=workflow_id, sandbox=sandbox, token="ghp_testtoken",
                               github_factory=github.factory, settings=extra)
             rt.recorder = DBRecorder(workflow_id)
+            if mcp:
+                from app.mcp_tools.broker import McpToolBroker
+                from app.mcp_tools.config import builtin_repo_spec
+
+                rt.mcp = McpToolBroker([builtin_repo_spec(rt.repositories.workspace_dir(workflow_id) / "repo")],
+                                       rt.settings, rt.recorder)
             return rt
 
         settings = get_settings().model_copy(update={"workspace_root": tmp_path / "ws", **extra})
@@ -350,3 +357,119 @@ def test_full_workflow_with_real_docker_sandbox(client, auth_headers, e2e, pytes
     detail = _approve(client, auth_headers, env, workflow_id)
     assert detail["status"] == "completed"
     assert Path(env["manager"].settings.workspace_root, workflow_id).exists() is False  # workspace cleaned up
+
+
+def _traced_script():
+    script = llm_script()
+    # MCP: the architect reads a file through the repo MCP server, then finishes; later agents just finish.
+    script["ToolDecision*"] = [
+        {"action": "call_tool", "server": "devflow-repo", "tool": "read_file", "arguments": {"path": "app/calc.py"}},
+        {"action": "finish"},
+    ]
+    return script
+
+
+def test_workflow_with_mcp_tools_and_langsmith_tracing(client, auth_headers, e2e):
+    from app.observability.tracing import Tracing, set_tracing
+    from tests.conftest import FakeLangSmith
+
+    fake = FakeLangSmith()
+    settings = get_settings().model_copy(update={"langsmith_tracing": True, "langsmith_api_key": "lsv2_test"})
+    set_tracing(Tracing(settings, client_options=fake.client_options()))
+    try:
+        env = e2e(FakeSandbox([0]), script=_traced_script(), mcp=True)
+        workflow_id = _start(client, auth_headers, env)
+        first = _get(client, auth_headers, workflow_id)
+        assert first["status"] == "awaiting_approval", first["error_details"]
+        detail = _approve(client, auth_headers, env, workflow_id)          # execution gate -> release gate
+        assert detail["pending_approval"]["gate"] == "release"
+        detail = _approve(client, auth_headers, env, workflow_id)          # release gate -> completed
+        assert detail["status"] == "completed", detail["error_details"]
+
+        # --- MCP: tool call executed for real over stdio, audited and visible in the results
+        results = client.get(f"/api/workflows/{workflow_id}/results", headers=auth_headers).json()
+        calls = results["tool_calls"]
+        assert [(c["agent"], c["server"], c["tool"], c["status"]) for c in calls] == [
+            ("architect", "devflow-repo", "read_file", "ok")]
+        assert "return a + b" in calls[0]["result_preview"] and calls[0]["arguments"] == {"path": "app/calc.py"}
+        architect_prompts = [c for c in env["provider"].calls if c["schema"] == "ArchitecturePlan"]
+        assert "UNTRUSTED" in architect_prompts[0]["messages"][1]["content"]  # findings reached the model, fenced
+        assert "return a + b" in architect_prompts[0]["messages"][1]["content"]
+
+        # --- LangSmith: three graph segments (start, execution approval, release approval), all linked
+        assert len(detail["trace_run_ids"]) == 3
+        roots = [fake.runs[r] for r in detail["trace_run_ids"]]
+        assert [r["name"] for r in roots] == ["devflow-workflow", "devflow-workflow-resume", "devflow-workflow-resume"]
+        assert all(r["extra"]["metadata"]["thread_id"] == workflow_id for r in roots)
+        assert roots[0]["extra"]["metadata"]["repository"] == "acme/calc"
+        node_names = {r["name"] for r in fake.runs.values() if r.get("run_type") == "chain"}
+        assert {"requirement_analysis", "architecture_design", "testing", "code_review", "github_release"} <= node_names
+        llm_runs = [r for r in fake.runs.values() if str(r.get("name", "")).startswith("llm:")]
+        assert {"llm:requirement_analyst", "llm:architect", "llm:backend_developer", "llm:code_reviewer"} <= {
+            r["name"] for r in llm_runs}
+        architect_llm = fake.runs_named("llm:architect")[0]
+        assert "architecture_design" in fake.ancestors(architect_llm)
+        tool_runs = fake.runs_named("mcp:devflow-repo.read_file")
+        assert len(tool_runs) == 1 and tool_runs[0]["run_type"] == "tool"
+        assert "architecture_design" in fake.ancestors(tool_runs[0])  # the MCP call nests under the architect node
+        feedback = {f["key"]: f for f in fake.feedback()}
+        assert feedback["human_approval_execution"]["score"] == 1.0 and feedback["human_approval_release"]["score"] == 1.0
+        assert feedback["workflow_completed"]["score"] == 1.0 and feedback["tests_passed"]["score"] == 1.0
+        assert feedback["review_approved"]["score"] == 1.0
+        sent = fake.everything_sent()
+        assert "ghp_testtoken" not in sent and "Authorization" not in sent  # no credentials in any trace
+
+        trace = client.get(f"/api/workflows/{workflow_id}/trace", headers=auth_headers).json()
+        assert trace["enabled"] and trace["run_ids"] == detail["trace_run_ids"] and trace["project"] == "devflow-ai"
+    finally:
+        set_tracing(None)
+
+
+def test_tracing_disabled_records_nothing(client, auth_headers, e2e):
+    env = e2e(FakeSandbox([0]))
+    workflow_id = _start(client, auth_headers, env)
+    detail = _get(client, auth_headers, workflow_id)
+    assert detail["trace_run_ids"] == []
+    trace = client.get(f"/api/workflows/{workflow_id}/trace", headers=auth_headers).json()
+    assert trace["enabled"] is False and "disabled" in trace["note"]
+    assert client.get(f"/api/workflows/{workflow_id}/results", headers=auth_headers).json()["tool_calls"] == []
+
+
+def test_devflow_mcp_server_drives_a_workflow_but_cannot_approve(client, auth_headers, e2e):
+    """An MCP client (e.g. Claude Code) can start and monitor workflows; approvals stay human-only."""
+    import asyncio
+
+    from mcp import Client
+
+    from app.mcp_tools.devflow_server import create_server
+
+    env = e2e(FakeSandbox([0]))
+    api = client  # the FastAPI TestClient is an httpx client, so the MCP server can wrap it directly
+    api.headers.update(auth_headers)
+    server = create_server(api)
+
+    async def scenario():
+        async with Client(server) as mcp_client:
+            names = {t.name for t in (await mcp_client.list_tools()).tools}
+            assert not any("approve" in n for n in names)  # by design
+            assert {"start_workflow", "get_workflow", "cancel_workflow", "list_projects"} <= names
+            projects = (await mcp_client.call_tool("list_projects", {})).structured_content
+            project_id = (projects.get("result") or projects)[0]["id"]
+            started = (await mcp_client.call_tool("start_workflow", {
+                "project_id": project_id, "requirement": "Add a subtract function to the calculator module"})
+            ).structured_content
+            workflow_id = started["workflow_id"]
+            await asyncio.to_thread(env["manager"].wait, workflow_id, 60)
+            status = (await mcp_client.call_tool("get_workflow", {"workflow_id": workflow_id})).structured_content
+            assert status["status"] == "awaiting_approval"
+            assert status["awaiting_human_approval"] == {
+                "gate": "execution", "title": status["awaiting_human_approval"]["title"], "where": "DevFlow dashboard"}
+            assert {a["agent"] for a in status["agents"]} >= {"requirement_analyst", "architect"}
+            missing = await mcp_client.call_tool("get_workflow", {"workflow_id": "nope"})
+            assert missing.is_error and "404" in missing.content[0].text and "Workflow not found" in missing.content[0].text
+            cancelled = (await mcp_client.call_tool("cancel_workflow", {"workflow_id": workflow_id})).structured_content
+            assert cancelled["status"] == "cancelled"
+            logs = (await mcp_client.call_tool("get_workflow_logs", {"workflow_id": workflow_id})).structured_content
+            assert any("Waiting for human approval" in e["message"] for e in (logs.get("result") or logs))
+
+    asyncio.run(scenario())

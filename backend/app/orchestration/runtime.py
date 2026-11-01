@@ -14,6 +14,7 @@ from typing import Any, Protocol
 
 from app.core.config import Settings
 from app.core.errors import GitHubNotConnectedError, WorkflowCancelledError
+from app.mcp_tools.broker import McpToolBroker
 from app.services.execution_service import DockerSandbox
 from app.services.github_service import GitHubService
 from app.services.llm_service import LLMService
@@ -36,6 +37,8 @@ class WorkflowRecorder(Protocol):
     def save_test_result(self, report: dict[str, Any], attempt: int) -> None: ...
     def save_review(self, report: dict[str, Any], attempt: int) -> None: ...
     def save_pull_request(self, data: dict[str, Any]) -> None: ...
+    def save_tool_call(self, call: dict[str, Any]) -> None: ...
+    def add_trace_run(self, run_id: str) -> None: ...
 
 
 @dataclass
@@ -52,6 +55,7 @@ class WorkflowRuntime:
     create_draft_pull_requests: bool = False
     require_execution_approval: bool = True
     require_release_approval: bool = True
+    mcp: McpToolBroker | None = None
     write_lock: threading.Lock = field(default_factory=threading.Lock)
 
     def workspace(self) -> Workspace:
@@ -62,6 +66,11 @@ class WorkflowRuntime:
         if not token:
             raise GitHubNotConnectedError("GitHub is not connected. Add a token in Settings.")
         return self.github_factory(token)
+
+    def close(self) -> None:
+        """Release resources held for this run (MCP server processes)."""
+        if self.mcp is not None:
+            self.mcp.close()
 
     def check_cancelled(self) -> None:
         if self.recorder.is_cancel_requested():

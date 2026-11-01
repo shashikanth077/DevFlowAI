@@ -25,13 +25,14 @@ import GitHubResults from '../features/workflow/GitHubResults';
 import LogViewer from '../features/workflow/LogViewer';
 import TaskBoard from '../features/workflow/TaskBoard';
 import { ReviewReports, TestResults } from '../features/workflow/TestResults';
+import { ToolCalls, TracePanel } from '../features/workflow/ToolsAndTraces';
 import { useWorkflowStream } from '../hooks/useWorkflowStream';
 import { api, errorMessage } from '../services/api';
 import { useAppDispatch } from '../store';
 import { notify } from '../store/notificationsSlice';
 import type { WorkflowResults } from '../types';
 
-const TABS = ['Agent monitor', 'Analysis', 'Tasks', 'Code changes', 'Tests & review', 'GitHub results', 'Logs'] as const;
+const TABS = ['Agent monitor', 'Analysis', 'Tasks', 'Code changes', 'Tests & review', 'GitHub results', 'Tools & traces', 'Logs'] as const;
 const ACTIVE = new Set(['queued', 'running', 'awaiting_approval']);
 
 export default function WorkflowDetailPage() {
@@ -172,7 +173,15 @@ export default function WorkflowDetailPage() {
             </Stack>
           )}
           {tab === 5 && results && <GitHubResults results={results} />}
-          {tab === 6 && <LogViewer logs={logs} />}
+          {tab === 6 && (
+            <Stack spacing={3}>
+              <Typography variant="h6">MCP tool calls</Typography>
+              <ToolCalls calls={results?.tool_calls ?? []} />
+              <Typography variant="h6">LangSmith traces</Typography>
+              <TracePanel workflowId={workflow.id} runIds={workflow.trace_run_ids ?? []} />
+            </Stack>
+          )}
+          {tab === 7 && <LogViewer logs={logs} />}
         </CardContent>
       </Card>
     </Stack>
