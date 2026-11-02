@@ -201,6 +201,11 @@ class OpenAICompatibleProvider(LLMProvider):
             raise ProviderError(f"Cannot reach {self.name}: {exc}", transient=True) from exc
         if response.status_code in (401, 403):
             raise ProviderError(f"The {self.name} API key was rejected. Check it in Settings.", transient=False)
+        if response.status_code == 429 and "insufficient_quota" in response.text:
+            raise ProviderError(
+                f"{self.name} account has no credit left. Add credit at the provider's billing page, then retry.",
+                transient=False,
+            )
         _raise_for_status(response, self.name)
         body = response.json()
         choices = body.get("choices") or []
