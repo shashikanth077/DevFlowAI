@@ -135,3 +135,14 @@ def test_openai_compatible_provider():
 def test_openai_provider_requires_key():
     with pytest.raises(LLMError):
         OpenAICompatibleProvider("openai", "https://api.example.com/v1", None, 5, "json_schema")
+
+
+@respx.mock
+def test_out_of_credit_is_not_retried_and_says_so():
+    route = respx.post("https://api.example.com/v1/chat/completions").mock(return_value=httpx.Response(
+        429, json={"error": {"type": "insufficient_quota", "code": "credit_balance_exhausted"}}))
+    provider = OpenAICompatibleProvider("openai", "https://api.example.com/v1", "sk-test", 5, "json_schema")
+    with pytest.raises(ProviderError) as exc:
+        provider.chat([{"role": "user", "content": "x"}], model="m", temperature=0, json_schema=None)
+    assert not exc.value.transient and "no credit left" in str(exc.value)
+    assert route.call_count == 1  # no retries
