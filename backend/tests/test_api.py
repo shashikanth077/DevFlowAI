@@ -155,9 +155,23 @@ def test_schema_status_flags_missing_migrations(tmp_path):
     engine = build_engine(f"sqlite:///{tmp_path / 'stale.db'}")
     status = schema_status(engine)
     assert status["ok"] is False and status["current"] is None
-    assert status["head"] == "0002" and "alembic upgrade head" in status["message"]
+    assert status["head"] == "0003" and "alembic upgrade head" in status["message"]
 
 
 def test_health_reports_schema(client):
     body = client.get("/health").json()
     assert "schema" in body["checks"]
+
+
+def test_legacy_ollama_settings_are_mapped_to_claude(client, auth_headers):
+    """Rows saved before Ollama was removed must not break the Settings page."""
+    from app.database.session import session_scope
+    from app.models import UserSettings
+
+    client.get("/api/settings", headers=auth_headers)  # create the row
+    with session_scope() as db:
+        row = db.query(UserSettings).one()
+        row.llm_provider, row.llm_model = "ollama", "llama3.1:8b"
+    body = client.get("/api/settings", headers=auth_headers)
+    assert body.status_code == 200
+    assert body.json()["llm_provider"] == "anthropic" and body.json()["llm_model"] == "claude-sonnet-5-5"

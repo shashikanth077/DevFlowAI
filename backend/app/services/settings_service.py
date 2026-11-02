@@ -38,8 +38,8 @@ def get_or_create_settings(db: Session, user_id: str) -> UserSettings:
 
 def to_out(row: UserSettings) -> SettingsOut:
     return SettingsOut(
-        llm_provider=row.llm_provider,  # type: ignore[arg-type]
-        llm_model=row.llm_model,
+        llm_provider=_provider(row),  # type: ignore[arg-type]
+        llm_model="claude-sonnet-5-5" if row.llm_provider in LEGACY_PROVIDERS else row.llm_model,
         llm_temperature=row.llm_temperature,
         llm_base_url=row.llm_base_url,
         llm_api_key_configured=bool(row.llm_api_key_encrypted),
@@ -70,10 +70,18 @@ def apply_update(row: UserSettings, update: SettingsUpdate) -> None:
             setattr(row, key, value)
 
 
+LEGACY_PROVIDERS = {"ollama": "anthropic"}  # removed providers map to their replacement
+
+
+def _provider(row: UserSettings) -> str:
+    return LEGACY_PROVIDERS.get(row.llm_provider, row.llm_provider)
+
+
 def llm_config_for(row: UserSettings) -> LLMConfig:
+    legacy = row.llm_provider in LEGACY_PROVIDERS
     return LLMConfig.from_settings(
-        provider=row.llm_provider,
-        model=row.llm_model,
+        provider=_provider(row),
+        model="claude-sonnet-5-5" if legacy else row.llm_model,
         temperature=row.llm_temperature,
         base_url=row.llm_base_url,
         api_key=decrypt_secret(row.llm_api_key_encrypted) if row.llm_api_key_encrypted else None,
