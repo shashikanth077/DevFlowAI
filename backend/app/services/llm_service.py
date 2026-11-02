@@ -199,6 +199,8 @@ class OpenAICompatibleProvider(LLMProvider):
             response = self._client.post("/chat/completions", json=payload)
         except httpx.TransportError as exc:
             raise ProviderError(f"Cannot reach {self.name}: {exc}", transient=True) from exc
+        if response.status_code in (401, 403):
+            raise ProviderError(f"The {self.name} API key was rejected. Check it in Settings.", transient=False)
         _raise_for_status(response, self.name)
         body = response.json()
         choices = body.get("choices") or []
@@ -216,6 +218,8 @@ class OpenAICompatibleProvider(LLMProvider):
             response = self._client.get("/models")
         except httpx.TransportError as exc:
             raise ProviderError(f"Cannot reach {self.name}: {exc}", transient=True) from exc
+        if response.status_code in (401, 403):
+            raise ProviderError(f"The {self.name} API key was rejected. Check it in Settings.", transient=False)
         _raise_for_status(response, self.name)
         return [m.get("id", "") for m in response.json().get("data", [])]
 

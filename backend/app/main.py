@@ -74,8 +74,9 @@ def create_app() -> FastAPI:
             checks["database"] = {"ok": False, "error": str(exc)[:200]}
         sandbox_ok, sandbox_info = DockerSandbox(cfg).available()
         checks["sandbox"] = {"ok": sandbox_ok, "info": sandbox_info}
-        checks["llm"] = {"ok": cfg.llm_provider != "anthropic" or bool(cfg.anthropic_api_key),
-                         "provider": cfg.llm_provider}
+        keys = {"anthropic": cfg.anthropic_api_key, "openai": cfg.openai_api_key, "mistral": cfg.mistral_api_key}
+        checks["llm"] = {"ok": bool(keys.get(cfg.llm_provider)), "provider": cfg.llm_provider,
+                         "message": "API key set" if keys.get(cfg.llm_provider) else "No API key set for this provider; add it in Settings"}
         checks["schema"] = schema_status(get_engine())
         status = "ok" if checks["database"]["ok"] and checks["schema"]["ok"] else "degraded"
         return {"status": status, "app": cfg.app_name, "checks": checks,
