@@ -42,8 +42,8 @@ class Settings(BaseSettings):
     checkpoint_sqlite_path: str = "./devflow_checkpoints.sqlite"
 
     # --- LLM ---------------------------------------------------------------
-    llm_provider: LLMProviderName = "anthropic"
-    llm_model: str = "claude-sonnet-5-5"
+    llm_provider: LLMProviderName = "openai"
+    llm_model: str = "gpt-4o-mini"
     llm_temperature: float = 0.2
     llm_timeout_seconds: float = 300.0
     llm_max_retries: int = 3

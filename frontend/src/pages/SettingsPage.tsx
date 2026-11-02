@@ -23,6 +23,12 @@ import { useAppDispatch } from '../store';
 import { notify } from '../store/notificationsSlice';
 import type { AppSettings, LLMTestResult, SettingsUpdate } from '../types';
 
+const PROVIDER_DEFAULT_MODEL: Record<AppSettings['llm_provider'], string> = {
+  openai: 'gpt-4o-mini',
+  anthropic: 'claude-sonnet-5-5',
+  mistral: 'mistral-large-latest',
+};
+
 const PROVIDER_HINTS: Record<string, string> = {
   anthropic: 'Claude models via the Anthropic Messages API. Requires an API key from console.anthropic.com. Example models: claude-sonnet-5-5, claude-opus-5-5, claude-haiku-5-5.',
   openai: 'OpenAI chat-completions API with JSON-schema structured output. Requires an API key.',
@@ -52,10 +58,7 @@ export default function SettingsPage() {
 
   const update = <K extends keyof AppSettings>(key: K, value: AppSettings[K]) => setForm({ ...form, [key]: value });
 
-  const save = async () => {
-    setSaving(true);
-    setError(null);
-    try {
+  const buildBody = (): SettingsUpdate => {
       const body: SettingsUpdate = {
         llm_provider: form.llm_provider,
         llm_model: form.llm_model,
@@ -71,20 +74,40 @@ export default function SettingsPage() {
         mcp_disabled_servers: form.mcp_disabled_servers,
       };
       if (apiKey) body.llm_api_key = apiKey;
-      const saved = await api.updateSettings(body);
+      return body;
+  };
+
+  // Persist the form (including a newly typed API key) and return whether it succeeded.
+  const persist = async (): Promise<boolean> => {
+    setSaving(true);
+    setError(null);
+    try {
+      const saved = await api.updateSettings(buildBody());
       settings.setData(saved);
       setApiKey('');
-      dispatch(notify('Settings saved', 'success'));
+      return true;
     } catch (err) {
       setError(errorMessage(err));
+      return false;
     } finally {
       setSaving(false);
     }
   };
 
-  const runTest = async () => {
-    setTesting(true);
+  const save = async () => {
+    if (await persist()) dispatch(notify('Settings saved', 'success'));
+  };
+
+  // Test what the user sees on screen: save first so the test uses the selected provider and key.
+  const changeProvider = (provider: AppSettings['llm_provider']) => {
+    setForm({ ...form, llm_provider: provider, llm_model: PROVIDER_DEFAULT_MODEL[provider] });
     setTest(null);
+  };
+
+  const runTest = async () => {
+    setTest(null);
+    if (!(await persist())) return;
+    setTesting(true);
     try {
       setTest(await api.testLLM());
     } catch (err) {
@@ -132,7 +155,7 @@ export default function SettingsPage() {
         <CardContent>
           <Stack spacing={2.5}>
             <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
-              <TextField select label="Provider" value={form.llm_provider} onChange={(e) => update('llm_provider', e.target.value as AppSettings['llm_provider'])} sx={{ minWidth: 180 }}>
+              <TextField select label="Provider" value={form.llm_provider} onChange={(e) => changeProvider(e.target.value as AppSettings['llm_provider'])} sx={{ minWidth: 180 }}>
                 <MenuItem value="anthropic">Anthropic (Claude)</MenuItem>
                 <MenuItem value="openai">OpenAI</MenuItem>
                 <MenuItem value="mistral">Mistral</MenuItem>
@@ -180,7 +203,7 @@ export default function SettingsPage() {
                 {testing ? 'Testing…' : 'Test connection'}
               </Button>
               <Typography variant="caption" color="text.secondary">
-                Uses saved settings.
+                Saves your changes, then tests the selected provider.
               </Typography>
             </Stack>
             {test && (
