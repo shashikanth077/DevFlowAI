@@ -272,7 +272,9 @@ class RepositoryService:
             shutil.rmtree(target)
         target.parent.mkdir(parents=True, exist_ok=True)
         run_git(
-            ["clone", "--branch", base_branch, "--single-branch", "--no-tags", clone_url, str(target)],
+            # core.longpaths: Windows otherwise fails checkout of deeply nested files (MAX_PATH 260).
+            ["-c", "core.longpaths=true", "clone", "--branch", base_branch, "--single-branch", "--no-tags",
+             clone_url, str(target)],
             None, token=token, timeout=900,
         )
         logger.info("Repository cloned", extra={"workflow_id": workflow_id, "branch": base_branch})
