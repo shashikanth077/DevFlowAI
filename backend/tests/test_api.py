@@ -23,7 +23,7 @@ def test_auth_flow(client):
 
 def test_settings_roundtrip_never_returns_api_key(client, auth_headers):
     defaults = client.get("/api/settings", headers=auth_headers).json()
-    assert defaults["llm_provider"] == "ollama" and defaults["llm_api_key_configured"] is False
+    assert defaults["llm_provider"] == "anthropic" and defaults["llm_api_key_configured"] is False
     updated = client.put("/api/settings", headers=auth_headers, json={
         "llm_provider": "openai", "llm_model": "gpt-4o-mini", "llm_api_key": "sk-secret-value",
         "agent_models": {"code_reviewer": "gpt-4o", "architect": ""}, "workflow_max_retries": 5,
@@ -36,9 +36,12 @@ def test_settings_roundtrip_never_returns_api_key(client, auth_headers):
 
 
 def test_test_llm_reports_unreachable_provider(client, auth_headers):
-    client.put("/api/settings", headers=auth_headers, json={"llm_base_url": "http://127.0.0.1:9"})
     body = client.post("/api/settings/test-llm", headers=auth_headers).json()
-    assert body["ok"] is False and "Ollama" in body["message"]
+    assert body["ok"] is False and "No Anthropic API key" in body["message"]
+    client.put("/api/settings", headers=auth_headers,
+               json={"llm_api_key": "sk-ant-test", "llm_base_url": "http://127.0.0.1:9"})
+    body = client.post("/api/settings/test-llm", headers=auth_headers).json()
+    assert body["ok"] is False and "Cannot reach" in body["message"]
 
 
 def test_github_connect_repos_and_branches(client, auth_headers, respx_mock):

@@ -2,7 +2,7 @@
 
 Agents never talk to a provider directly. They call :class:`LLMService`, which
 
-* selects the configured provider (Ollama by default, OpenAI/Mistral via the
+* selects the configured provider (Anthropic Claude or OpenAI, plus Mistral via the
   OpenAI-compatible chat completions API),
 * resolves the model per agent (agents can be pinned to different models),
 * redacts secrets from every prompt,
@@ -102,47 +102,72 @@ def _raise_for_status(response: httpx.Response, provider: str) -> None:
     raise ProviderError(f"{provider} returned HTTP {response.status_code}: {body}", transient=transient)
 
 
-class OllamaProvider(LLMProvider):
-    name = "ollama"
+class AnthropicProvider(LLMProvider):
+    """Anthropic Messages API (Claude models).
 
-    def __init__(self, base_url: str, timeout: float) -> None:
-        self._client = httpx.Client(base_url=base_url.rstrip("/"), timeout=timeout)
+    The system prompt is sent in Anthropic's dedicated ``system`` field. Structured output is requested
+    through the schema instructions already in the system prompt and validated by the caller, so no
+    provider-specific JSON mode is needed.
+    """
+
+    name = "anthropic"
+    API_VERSION = "2023-06-01"
+
+    def __init__(self, base_url: str, api_key: str | None, timeout: float, max_tokens: int) -> None:
+        if not api_key:
+            raise LLMError("No Anthropic API key configured. Add it in Settings or set ANTHROPIC_API_KEY.")
+        self._max_tokens = max_tokens
+        self._client = httpx.Client(
+            base_url=base_url.rstrip("/"),
+            timeout=timeout,
+            headers={"x-api-key": api_key, "anthropic-version": self.API_VERSION, "content-type": "application/json"},
+        )
 
     def chat(self, messages, *, model, temperature, json_schema):
         return self.chat_full(messages, model=model, temperature=temperature, json_schema=json_schema).content
 
     def chat_full(self, messages, *, model, temperature, json_schema):
+        system = "\n\n".join(m["content"] for m in messages if m["role"] == "system")
+        turns = [{"role": m["role"], "content": m["content"]} for m in messages if m["role"] != "system"]
         payload: dict[str, Any] = {
             "model": model,
-            "messages": messages,
-            "stream": False,
-            "options": {"temperature": temperature},
+            "max_tokens": self._max_tokens,
+            "temperature": min(max(temperature, 0.0), 1.0),  # Anthropic accepts 0..1
+            "messages": turns,
         }
-        if json_schema is not None:
-            payload["format"] = json_schema  # Ollama >= 0.5 supports JSON-schema constrained output
+        if system:
+            payload["system"] = system
         try:
-            response = self._client.post("/api/chat", json=payload)
+            response = self._client.post("/v1/messages", json=payload)
         except httpx.TransportError as exc:
-            raise ProviderError(f"Cannot reach Ollama at {self._client.base_url}: {exc}", transient=True) from exc
-        if response.status_code == 404 and "not found" in response.text.lower():
-            raise ProviderError(
-                f"Model '{model}' is not available in Ollama. Run: ollama pull {model}", transient=False
-            )
-        _raise_for_status(response, "Ollama")
+            raise ProviderError(f"Cannot reach the Anthropic API: {exc}", transient=True) from exc
+        if response.status_code == 404:
+            raise ProviderError(f"Anthropic model '{model}' was not found. Check the model name in Settings.",
+                                transient=False)
+        if response.status_code in (401, 403):
+            raise ProviderError("The Anthropic API key was rejected. Check it in Settings.", transient=False)
+        _raise_for_status(response, "Anthropic")
         body = response.json()
+        text = "".join(block.get("text", "") for block in body.get("content", []) if block.get("type") == "text")
+        raw_usage = body.get("usage") or {}
         usage = None
-        if "prompt_eval_count" in body or "eval_count" in body:
-            inp, out = int(body.get("prompt_eval_count", 0)), int(body.get("eval_count", 0))
+        if raw_usage:
+            inp, out = int(raw_usage.get("input_tokens", 0)), int(raw_usage.get("output_tokens", 0))
             usage = {"input_tokens": inp, "output_tokens": out, "total_tokens": inp + out}
-        return ChatResponse(body.get("message", {}).get("content", ""), usage)
+        if body.get("stop_reason") == "max_tokens":
+            raise ProviderError("Claude stopped because the response hit max_tokens; the output is incomplete.",
+                                transient=False)
+        return ChatResponse(text, usage)
 
     def list_models(self) -> list[str]:
         try:
-            response = self._client.get("/api/tags")
+            response = self._client.get("/v1/models")
         except httpx.TransportError as exc:
-            raise ProviderError(f"Cannot reach Ollama: {exc}", transient=True) from exc
-        _raise_for_status(response, "Ollama")
-        return [m.get("name", "") for m in response.json().get("models", [])]
+            raise ProviderError(f"Cannot reach the Anthropic API: {exc}", transient=True) from exc
+        if response.status_code in (401, 403):
+            raise ProviderError("The Anthropic API key was rejected. Check it in Settings.", transient=False)
+        _raise_for_status(response, "Anthropic")
+        return [m.get("id", "") for m in response.json().get("data", [])]
 
 
 class OpenAICompatibleProvider(LLMProvider):
@@ -197,8 +222,11 @@ class OpenAICompatibleProvider(LLMProvider):
 
 def build_provider(config: LLMConfig, settings: Settings | None = None) -> LLMProvider:
     s = settings or get_settings()
-    if config.provider == "ollama":
-        return OllamaProvider(config.base_url or s.ollama_base_url, config.timeout_seconds)
+    if config.provider == "anthropic":
+        return AnthropicProvider(
+            config.base_url or s.anthropic_base_url, config.api_key or s.anthropic_api_key,
+            config.timeout_seconds, s.anthropic_max_tokens,
+        )
     if config.provider == "openai":
         return OpenAICompatibleProvider(
             "openai", config.base_url or s.openai_base_url, config.api_key or s.openai_api_key,

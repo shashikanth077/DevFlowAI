@@ -24,7 +24,7 @@ import { notify } from '../store/notificationsSlice';
 import type { AppSettings, LLMTestResult, SettingsUpdate } from '../types';
 
 const PROVIDER_HINTS: Record<string, string> = {
-  ollama: 'Local models via Ollama (default http://localhost:11434). Pull a model first, e.g. `ollama pull llama3.1:8b`.',
+  anthropic: 'Claude models via the Anthropic Messages API. Requires an API key from console.anthropic.com. Example models: claude-sonnet-5-5, claude-opus-5-5, claude-haiku-5-5.',
   openai: 'OpenAI chat-completions API with JSON-schema structured output. Requires an API key.',
   mistral: 'Mistral API (OpenAI-compatible wire format, JSON mode). Requires an API key.',
 };
@@ -133,11 +133,11 @@ export default function SettingsPage() {
           <Stack spacing={2.5}>
             <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
               <TextField select label="Provider" value={form.llm_provider} onChange={(e) => update('llm_provider', e.target.value as AppSettings['llm_provider'])} sx={{ minWidth: 180 }}>
-                <MenuItem value="ollama">Ollama (local)</MenuItem>
+                <MenuItem value="anthropic">Anthropic (Claude)</MenuItem>
                 <MenuItem value="openai">OpenAI</MenuItem>
                 <MenuItem value="mistral">Mistral</MenuItem>
               </TextField>
-              <TextField label="Default model" value={form.llm_model} onChange={(e) => update('llm_model', e.target.value)} sx={{ flex: 1 }} helperText="e.g. llama3.1:8b, qwen2.5-coder:14b, gpt-4o-mini" />
+              <TextField label="Default model" value={form.llm_model} onChange={(e) => update('llm_model', e.target.value)} sx={{ flex: 1 }} helperText="e.g. claude-sonnet-5-5, gpt-4o-mini" />
               <TextField label="Base URL (optional)" value={form.llm_base_url ?? ''} onChange={(e) => update('llm_base_url', e.target.value)} sx={{ flex: 1 }} helperText="Overrides the server default" />
             </Stack>
             <Typography variant="body2" color="text.secondary">
@@ -149,7 +149,7 @@ export default function SettingsPage() {
               </Typography>
               <Slider aria-labelledby="temperature-label" min={0} max={1.5} step={0.05} value={form.llm_temperature} onChange={(_, value) => update('llm_temperature', value as number)} />
             </Box>
-            {form.llm_provider !== 'ollama' && (
+            {(
               <TextField
                 label="API key"
                 type="password"

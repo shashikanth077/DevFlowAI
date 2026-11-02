@@ -1,6 +1,6 @@
 """Provider-independent tool-use loop for agents.
 
-Instead of relying on each LLM provider's native function-calling (which differs between Ollama
+Instead of relying on each LLM provider's native function-calling (which differs between providers
 models, OpenAI and Mistral), the agent asks the model for a small structured *decision* each round -
 call one tool, or finish - using the same schema-validated JSON path as every other agent output.
 The collected tool results are then handed to the agent as reference material.

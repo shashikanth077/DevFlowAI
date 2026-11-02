@@ -56,7 +56,7 @@ All six development phases from the specification are implemented and covered by
 
 | Phase | Scope | Status |
 |------:|-------|--------|
-| 1 | FastAPI backend, React dashboard, Ollama integration, Requirement Analyst with structured (Pydantic) output | ✅ Implemented |
+| 1 | FastAPI backend, React dashboard, LLM integration (Claude / OpenAI), Requirement Analyst with structured (Pydantic) output | ✅ Implemented |
 | 2 | GitHub integration (token connect, repos, branches), isolated clone and inspection, Architecture Agent, Task Orchestrator | ✅ Implemented |
 | 3 | Frontend and Backend Development Agents writing real files (with overwrite guards), Docker sandbox | ✅ Implemented |
 | 4 | QA Agent (tests, lint, build in sandbox), correction loops with retry limit, Code Review & Security Agent | ✅ Implemented |
@@ -65,7 +65,7 @@ All six development phases from the specification are implemented and covered by
 
 **How it was verified**
 
-- **Backend: 96 pytest tests.** These cover the security helpers, the LLM service (Ollama and OpenAI-compatible
+- **Backend: 96 pytest tests.** These cover the security helpers, the LLM service (Anthropic Claude and OpenAI-compatible
   wire formats, validation retries, redaction), repository inspection and path-safety guards, every agent,
   routing and reducers, the REST API, Docker sandbox isolation, and complete **end-to-end LangGraph runs
   through the REST API**. The end-to-end runs include a test failure followed by a correction loop, a review
@@ -82,7 +82,7 @@ All six development phases from the specification are implemented and covered by
 | Dashboard | React 19, TypeScript, Vite, Material UI, Redux Toolkit, Axios | SSE live updates with a polling fallback |
 | API | FastAPI, Pydantic v2 | JWT auth, typed request/response models, correct status codes |
 | Orchestration | LangGraph `StateGraph` | Conditional edges, parallel fan-out, `interrupt()` approval gates, checkpointing |
-| LLM | `LLMService` with Ollama / OpenAI / Mistral providers | JSON-schema constrained output, validation + self-correction, per-agent models |
+| LLM | `LLMService` with Anthropic Claude / OpenAI / Mistral providers | JSON-schema constrained output, validation + self-correction, per-agent models |
 | Persistence | PostgreSQL + SQLAlchemy 2 + Alembic | Every run, agent execution, task, diff, test, review and PR is stored |
 | Checkpoints | `PostgresSaver` (or SQLite / memory) | Thread id = workflow id; resumes after restart |
 | Sandbox | Docker CLI | `docker cp` (no mounts), `--network none`, CPU/mem/PID limits, `--cap-drop ALL`, timeouts |
@@ -181,7 +181,7 @@ MCP is used in **both directions**.
 **1. Agents use MCP tools (DevFlow is an MCP client).** When enabled, the architect, developers, reviewer and
 requirement analyst run a short tool loop before they answer: the model picks a tool (or finishes), the broker
 runs it, and the result is added to the prompt. This uses the same schema-validated JSON path as every other
-agent output, so it works identically with Ollama, OpenAI and Mistral and needs no provider-specific tool-calling.
+agent output, so it works identically with Claude, OpenAI and Mistral and needs no provider-specific tool-calling.
 
 - **Built-in `devflow-repo` server** (`app/mcp_tools/repo_server.py`): `list_directory`, `read_file`,
   `search_code`, `git_log`, `git_status`, `git_diff`. It lets agents explore a repository on demand instead of
@@ -249,28 +249,22 @@ docker-compose.yml  .env.example
 
 ## Quick start (Docker Compose)
 
-Prerequisites: Docker with Compose v2. A GPU is optional; Ollama runs on CPU but more slowly.
+Prerequisites: Docker with Compose v2 and an API key from Anthropic (https://console.anthropic.com) or OpenAI.
 
 ```bash
 cp .env.example .env
 ```
 
-Set `SECRET_KEY` in `.env`, and set `DOCKER_GID` to the group id of your Docker socket:
+Set `SECRET_KEY` and `ANTHROPIC_API_KEY` (or `OPENAI_API_KEY`) in `.env`, and set `DOCKER_GID` to the group id of your Docker socket:
 
 ```bash
 stat -c %g /var/run/docker.sock
 ```
 
-Start everything. This also pulls the `LLM_MODEL` into Ollama on first start, which takes a while:
+Start everything:
 
 ```bash
 docker compose up -d --build
-```
-
-Watch the model download:
-
-```bash
-docker compose logs -f ollama-pull
 ```
 
 Then open the dashboard at http://localhost:3000. The API docs are at http://localhost:8000/docs, and the
@@ -278,23 +272,10 @@ health check is at http://localhost:8000/health.
 
 ## Local development
 
-**1. Ollama**
+**1. LLM API key**
 
-```bash
-curl -fsSL https://ollama.com/install.sh | sh
-```
-
-```bash
-ollama serve
-```
-
-In another terminal:
-
-```bash
-ollama pull llama3.1:8b
-```
-
-Coding-oriented models such as `qwen2.5-coder:14b` produce noticeably better code. Pin them per agent in **Settings**.
+Create a key at https://console.anthropic.com (Claude) or https://platform.openai.com (OpenAI), then set
+`ANTHROPIC_API_KEY` or `OPENAI_API_KEY` in `backend/.env`. You can also enter the key in **Settings**; it is stored encrypted.
 
 **2. PostgreSQL**
 
@@ -358,8 +339,8 @@ All settings are environment variables; see [`.env.example`](.env.example) for t
 |----------|---------|---------|
 | `SECRET_KEY` | *(must set)* | JWT signing and key derivation for encrypted secrets |
 | `DATABASE_URL` | `postgresql+psycopg://devflow:devflow@localhost:5432/devflow` | Database (SQLite also supported) |
-| `LLM_PROVIDER` / `LLM_MODEL` / `LLM_TEMPERATURE` | `ollama` / `llama3.1:8b` / `0.2` | Defaults for new users (editable in Settings) |
-| `OLLAMA_BASE_URL` | `http://localhost:11434` | Ollama endpoint |
+| `LLM_PROVIDER` / `LLM_MODEL` / `LLM_TEMPERATURE` | `anthropic` / `claude-sonnet-5-5` / `0.2` | Defaults for new users (editable in Settings) |
+| `ANTHROPIC_API_KEY` / `ANTHROPIC_MAX_TOKENS` | – / `8192` | Claude API key and response size limit |
 | `OPENAI_API_KEY`, `MISTRAL_API_KEY` | – | Optional server-wide keys (users can store their own, encrypted) |
 | `GITHUB_TOKEN` | – | Optional server-wide token (users normally connect their own in Settings) |
 | `PROTECTED_BRANCH_PATTERNS` | `main,master,develop,production,release/*` | The release agent never pushes to these |
@@ -384,7 +365,7 @@ All settings are environment variables; see [`.env.example`](.env.example) for t
 2. **Settings → GitHub connection:** paste a fine-grained personal access token with access to the target
    repositories. It needs *Contents: read & write*, *Pull requests: read & write* and *Metadata: read*.
    The token is validated against GitHub, encrypted at rest, and never returned to the browser.
-3. **Settings → LLM provider:** pick Ollama, OpenAI or Mistral and a model, then click **Test connection**.
+3. **Settings → LLM provider:** pick Anthropic (Claude), OpenAI or Mistral, enter the API key and a model (for example `claude-sonnet-5-5`), then click **Test connection**.
    You can pin individual agents to different models. Pinning the reviewer to a different model gives a more independent review.
 4. **Create Project:** choose a repository, a base branch and a requirement. Sample requirements are one
    click away; more are in [`docs/sample-requirements.md`](docs/sample-requirements.md). Click **Start workflow**.
@@ -450,7 +431,7 @@ Interactive docs are at `/docs`. The main endpoints:
 | GET | `/api/integrations/status` | LangSmith and MCP status (never secrets or launch commands) |
 | POST | `/api/integrations/mcp/test`, `/api/integrations/langsmith/test` | Connect to MCP servers and list tools with their policy; check LangSmith |
 | GET | `/api/dashboard/stats` | Dashboard counters and recent PRs |
-| GET | `/health` | Database, sandbox and Ollama health |
+| GET | `/health` | Database, schema, sandbox and LLM configuration health |
 
 ## Testing
 

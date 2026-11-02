@@ -68,7 +68,7 @@ class ScriptedProvider(LLMProvider):
 
 def make_llm(responses: dict[str, Any], **config: Any) -> tuple[LLMService, ScriptedProvider]:
     provider = ScriptedProvider(responses)
-    cfg = LLMConfig(provider="ollama", model="scripted-model", max_retries=config.pop("max_retries", 2), **config)
+    cfg = LLMConfig(provider="scripted", model="scripted-model", max_retries=config.pop("max_retries", 2), **config)
     return LLMService(cfg, provider=provider), provider
 
 

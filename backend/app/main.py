@@ -7,7 +7,6 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-import httpx
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -75,12 +74,8 @@ def create_app() -> FastAPI:
             checks["database"] = {"ok": False, "error": str(exc)[:200]}
         sandbox_ok, sandbox_info = DockerSandbox(cfg).available()
         checks["sandbox"] = {"ok": sandbox_ok, "info": sandbox_info}
-        if cfg.llm_provider == "ollama":
-            try:
-                response = httpx.get(f"{cfg.ollama_base_url.rstrip('/')}/api/version", timeout=2)
-                checks["ollama"] = {"ok": response.status_code == 200, "version": response.json().get("version")}
-            except Exception as exc:  # noqa: BLE001
-                checks["ollama"] = {"ok": False, "error": str(exc)[:200]}
+        checks["llm"] = {"ok": cfg.llm_provider != "anthropic" or bool(cfg.anthropic_api_key),
+                         "provider": cfg.llm_provider}
         checks["schema"] = schema_status(get_engine())
         status = "ok" if checks["database"]["ok"] and checks["schema"]["ok"] else "degraded"
         return {"status": status, "app": cfg.app_name, "checks": checks,
