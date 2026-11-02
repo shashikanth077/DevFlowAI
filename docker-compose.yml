@@ -1,4 +1,4 @@
-# DevFlow AI - full local stack
+# DevFlow AI - full local stack (LLMs: Anthropic Claude or OpenAI, set in .env)
 #   docker compose up -d --build
 #   dashboard: http://localhost:3000   API docs: http://localhost:8000/docs
 name: devflow-ai
@@ -20,34 +20,15 @@ services:
     ports:
       - "5432:5432"
 
-  ollama:
-    image: ollama/ollama:latest
-    volumes:
-      - ollama-models:/root/.ollama
-    ports:
-      - "11434:11434"
-    # Uncomment for NVIDIA GPUs:
-    # deploy:
-    #   resources:
-    #     reservations:
-    #       devices: [{ driver: nvidia, count: all, capabilities: [gpu] }]
-
-  ollama-pull:
-    image: ollama/ollama:latest
-    depends_on: [ollama]
-    environment:
-      OLLAMA_HOST: http://ollama:11434
-    entrypoint: ["sh", "-c", "sleep 3 && ollama pull ${LLM_MODEL:-llama3.1:8b}"]
-    restart: "no"
-
   backend:
     build: ./backend
     env_file:
       - path: .env
         required: false
     environment:
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-devflow}:${POSTGRES_PASSWORD:-devflow}@postgres:5432/${POSTGRES_DB:-devflow}
-      OLLAMA_BASE_URL: http://ollama:11434
       WORKSPACE_ROOT: /var/lib/devflow/workspaces
       CORS_ORIGINS: http://localhost:3000,http://localhost:5173
     depends_on:
@@ -71,5 +52,4 @@ services:
 
 volumes:
   postgres-data:
-  ollama-models:
   workspaces:

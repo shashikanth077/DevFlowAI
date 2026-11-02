@@ -5,7 +5,7 @@ import respx
 
 from app.core.config import get_settings
 from app.observability.tracing import Tracing, configure_tracing, sanitize_payload
-from app.services.llm_service import LLMConfig, LLMService
+from app.services.llm_service import AnthropicProvider, LLMConfig, LLMService
 from tests.conftest import FakeLangSmith
 
 TOKEN = "ghp_" + "a" * 36
@@ -72,10 +72,11 @@ def test_llm_call_is_traced_with_usage_and_redaction():
         x: str
 
     with respx.mock:
-        respx.post("http://ollama.test/api/chat").mock(return_value=httpx.Response(200, json={
-            "message": {"content": json.dumps({"title": "T", "summary": "S"})},
-            "prompt_eval_count": 120, "eval_count": 30}))
-        llm = LLMService(LLMConfig(provider="ollama", model="llama3.1:8b", base_url="http://ollama.test"))
+        respx.post("https://api.anthropic.com/v1/messages").mock(return_value=httpx.Response(200, json={
+            "content": [{"type": "text", "text": json.dumps({"title": "T", "summary": "S"})}],
+            "usage": {"input_tokens": 120, "output_tokens": 30}}))
+        llm = LLMService(LLMConfig(provider="anthropic", model="claude-sonnet-5-5", api_key="sk-ant-test"),
+                         provider=AnthropicProvider("https://api.anthropic.com", "sk-ant-test", 5, 1024))
 
         def node(state):
             llm.structured("architect", "system", f"user text with {TOKEN}", RequirementAnalysis)
@@ -92,7 +93,7 @@ def test_llm_call_is_traced_with_usage_and_redaction():
     assert root["name"] == "devflow-workflow" and root["extra"]["metadata"]["repository"] == "acme/calc"
     assert root["extra"]["metadata"]["thread_id"] == "wf-1" and "devflow" in root["tags"]
     llm_run = fake.runs_named("llm:architect")[0]
-    assert llm_run["run_type"] == "llm" and llm_run["extra"]["metadata"]["ls_model_name"] == "llama3.1:8b"
+    assert llm_run["run_type"] == "llm" and llm_run["extra"]["metadata"]["ls_model_name"] == "claude-sonnet-5-5"
     assert llm_run["outputs"]["usage_metadata"] == {"input_tokens": 120, "output_tokens": 30, "total_tokens": 150}
     assert fake.ancestors(llm_run) == ["architect_node", "devflow-workflow"]  # nested under its graph node
     assert TOKEN not in fake.everything_sent()  # credentials never leave the process

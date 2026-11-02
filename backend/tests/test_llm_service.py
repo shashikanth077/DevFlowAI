@@ -7,10 +7,10 @@ import respx
 from app.core.errors import LLMError
 from app.schemas.requirement import RequirementAnalysis
 from app.services.llm_service import (
+    AnthropicProvider,
     LLMConfig,
     LLMProvider,
     LLMService,
-    OllamaProvider,
     OpenAICompatibleProvider,
     ProviderError,
     extract_json,
@@ -76,41 +76,47 @@ class FlakyProvider(LLMProvider):
 
 def test_transient_provider_errors_are_retried(monkeypatch):
     monkeypatch.setattr("time.sleep", lambda _: None)
-    llm = LLMService(LLMConfig(provider="ollama", model="m", max_retries=3),
+    llm = LLMService(LLMConfig(provider="anthropic", model="m", max_retries=3),
                      provider=FlakyProvider([ProviderError("503", transient=True)]))
     assert llm.structured("a", "s", "u", RequirementAnalysis).title == "Login"
 
 
 def test_non_transient_provider_error_raises():
-    llm = LLMService(LLMConfig(provider="ollama", model="m", max_retries=3),
+    llm = LLMService(LLMConfig(provider="anthropic", model="m", max_retries=3),
                      provider=FlakyProvider([ProviderError("model missing", transient=False)]))
     with pytest.raises(LLMError):
         llm.structured("a", "s", "u", RequirementAnalysis)
 
 
 @respx.mock
-def test_ollama_provider_sends_schema_and_parses():
-    route = respx.post("http://ollama:11434/api/chat").mock(
-        return_value=httpx.Response(200, json={"message": {"role": "assistant", "content": json.dumps(VALID)}})
-    )
-    llm = LLMService(LLMConfig(provider="ollama", model="llama3.1:8b", base_url="http://ollama:11434"))
+def test_anthropic_provider_uses_messages_api_and_parses():
+    route = respx.post("https://api.anthropic.com/v1/messages").mock(return_value=httpx.Response(200, json={
+        "content": [{"type": "text", "text": json.dumps(VALID)}], "stop_reason": "end_turn",
+        "usage": {"input_tokens": 120, "output_tokens": 40}}))
+    llm = LLMService(LLMConfig(provider="anthropic", model="claude-sonnet-5-5", api_key="sk-ant-test"),
+                     provider=AnthropicProvider("https://api.anthropic.com", "sk-ant-test", 5, 1024))
     result = llm.structured("requirement_analyst", "sys", "user", RequirementAnalysis)
     assert result.title == "Login"
-    body = json.loads(route.calls[0].request.content)
-    assert body["model"] == "llama3.1:8b"
-    assert body["format"]["title"] == "RequirementAnalysis"
-    assert body["stream"] is False
+    request = route.calls[0].request
+    assert request.headers["x-api-key"] == "sk-ant-test" and request.headers["anthropic-version"] == "2023-06-01"
+    body = json.loads(request.content)
+    assert body["model"] == "claude-sonnet-5-5" and body["max_tokens"] == 1024
+    assert body["system"].startswith("sys") and all(m["role"] != "system" for m in body["messages"])
+    assert "RequirementAnalysis" in body["system"]  # the JSON schema is in the instructions
 
 
 @respx.mock
-def test_ollama_missing_model_is_not_retried():
-    respx.post("http://ollama:11434/api/chat").mock(
-        return_value=httpx.Response(404, json={"error": "model 'x' not found"})
-    )
-    provider = OllamaProvider("http://ollama:11434", 5)
+def test_anthropic_errors_are_clear_and_not_retried():
+    respx.post("https://api.anthropic.com/v1/messages").mock(return_value=httpx.Response(401, json={}))
+    provider = AnthropicProvider("https://api.anthropic.com", "bad", 5, 100)
     with pytest.raises(ProviderError) as exc:
-        provider.chat([], model="x", temperature=0, json_schema=None)
-    assert not exc.value.transient and "ollama pull x" in str(exc.value)
+        provider.chat([{"role": "user", "content": "x"}], model="m", temperature=0, json_schema=None)
+    assert not exc.value.transient and "API key was rejected" in str(exc.value)
+
+
+def test_anthropic_requires_a_key():
+    with pytest.raises(LLMError, match="No Anthropic API key"):
+        AnthropicProvider("https://api.anthropic.com", None, 5, 100)
 
 
 @respx.mock

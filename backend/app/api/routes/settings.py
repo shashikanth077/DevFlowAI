@@ -41,7 +41,6 @@ def test_llm(db: Session = Depends(get_db), user: User = Depends(get_current_use
     available = config.model in models or any(m.split(":")[0] == config.model for m in models)
     message = "Connected; model available" if available else (
         f"Connected, but model '{config.model}' was not found"
-        + (f". Run: ollama pull {config.model}" if config.provider == "ollama" else "")
     )
     return LLMTestResponse(ok=available, provider=config.provider, model=config.model, message=message,
                            available_models=models[:100])

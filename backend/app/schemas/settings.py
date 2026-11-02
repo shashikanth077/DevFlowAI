@@ -11,7 +11,7 @@ AGENT_NAMES = (
 
 
 class SettingsOut(BaseModel):
-    llm_provider: Literal["ollama", "openai", "mistral"]
+    llm_provider: Literal["anthropic", "openai", "mistral"]
     llm_model: str
     llm_temperature: float
     llm_base_url: str | None
@@ -28,7 +28,7 @@ class SettingsOut(BaseModel):
 
 
 class SettingsUpdate(BaseModel):
-    llm_provider: Literal["ollama", "openai", "mistral"] | None = None
+    llm_provider: Literal["anthropic", "openai", "mistral"] | None = None
     llm_model: str | None = Field(default=None, min_length=1, max_length=200)
     llm_temperature: float | None = Field(default=None, ge=0.0, le=2.0)
     llm_base_url: str | None = Field(default=None, max_length=500)

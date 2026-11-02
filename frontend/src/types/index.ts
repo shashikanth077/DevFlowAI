@@ -257,7 +257,7 @@ export interface DashboardStats {
   recent_workflows: WorkflowSummary[];
 }
 
-export type LLMProvider = 'ollama' | 'openai' | 'mistral';
+export type LLMProvider = 'anthropic' | 'openai' | 'mistral';
 
 export interface AppSettings {
   llm_provider: LLMProvider;

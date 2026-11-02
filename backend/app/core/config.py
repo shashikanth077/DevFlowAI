@@ -13,7 +13,7 @@ from typing import Literal
 from pydantic import AliasChoices, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-LLMProviderName = Literal["ollama", "openai", "mistral"]
+LLMProviderName = Literal["anthropic", "openai", "mistral"]
 
 
 class Settings(BaseSettings):
@@ -42,13 +42,15 @@ class Settings(BaseSettings):
     checkpoint_sqlite_path: str = "./devflow_checkpoints.sqlite"
 
     # --- LLM ---------------------------------------------------------------
-    llm_provider: LLMProviderName = "ollama"
-    llm_model: str = "llama3.1:8b"
+    llm_provider: LLMProviderName = "anthropic"
+    llm_model: str = "claude-sonnet-5-5"
     llm_temperature: float = 0.2
     llm_timeout_seconds: float = 300.0
     llm_max_retries: int = 3
     llm_context_chars: int = 60_000
-    ollama_base_url: str = "http://localhost:11434"
+    anthropic_base_url: str = "https://api.anthropic.com"
+    anthropic_api_key: str | None = None
+    anthropic_max_tokens: int = 8192
     openai_base_url: str = "https://api.openai.com/v1"
     openai_api_key: str | None = None
     mistral_base_url: str = "https://api.mistral.ai/v1"
