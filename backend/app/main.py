@@ -18,6 +18,7 @@ from app.core.config import get_settings
 from app.core.errors import DevFlowError
 from app.core.logging import configure_logging
 from app.database.connection import get_engine
+from app.database.schema import schema_status
 from app.observability.tracing import configure_tracing, get_tracing
 from app.orchestration.checkpointing import close_checkpointer
 from app.services.execution_service import DockerSandbox
@@ -32,6 +33,9 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     configure_logging(cfg.log_level, cfg.log_json)
     Path(cfg.workspace_root).mkdir(parents=True, exist_ok=True)
     configure_tracing(cfg)
+    schema = schema_status(get_engine())
+    if not schema["ok"]:
+        logger.error(schema["message"], extra={"schema_current": schema["current"], "schema_head": schema["head"]})
     manager = get_workflow_manager()
     if cfg.resume_workflows_on_startup and cfg.environment != "test":
         try:
@@ -77,7 +81,8 @@ def create_app() -> FastAPI:
                 checks["ollama"] = {"ok": response.status_code == 200, "version": response.json().get("version")}
             except Exception as exc:  # noqa: BLE001
                 checks["ollama"] = {"ok": False, "error": str(exc)[:200]}
-        status = "ok" if checks["database"]["ok"] else "degraded"
+        checks["schema"] = schema_status(get_engine())
+        status = "ok" if checks["database"]["ok"] and checks["schema"]["ok"] else "degraded"
         return {"status": status, "app": cfg.app_name, "checks": checks,
                 "checkpointer": cfg.resolved_checkpoint_backend()}
 

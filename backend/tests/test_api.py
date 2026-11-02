@@ -142,3 +142,19 @@ def test_langsmith_connection_test_without_key(client, auth_headers):
     body = client.post("/api/integrations/langsmith/test", headers=auth_headers).json()
     assert body["ok"] is False and "LANGSMITH_API_KEY" in body["message"]
     assert client.post("/api/integrations/langsmith/test").status_code == 401
+
+
+def test_schema_status_flags_missing_migrations(tmp_path):
+    """A database created without running `alembic upgrade head` must be reported, not left to 500."""
+    from app.database.connection import build_engine
+    from app.database.schema import schema_status
+
+    engine = build_engine(f"sqlite:///{tmp_path / 'stale.db'}")
+    status = schema_status(engine)
+    assert status["ok"] is False and status["current"] is None
+    assert status["head"] == "0002" and "alembic upgrade head" in status["message"]
+
+
+def test_health_reports_schema(client):
+    body = client.get("/health").json()
+    assert "schema" in body["checks"]
